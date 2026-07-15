@@ -8,7 +8,7 @@
 <style>
 :root{--bg:#eef3f8;--card:#fff;--ink:#142033;--muted:#667085;--blue:#1f5f99;--green:#18864b;--red:#c43d3d;--amber:#b7791f;--line:#dbe3ec}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--ink)}
-header{background:#10243f;color:white;padding:18px 16px;position:sticky;top:0;z-index:5;box-shadow:0 2px 10px #0002}
+header{background:#10243f;color:white;padding:18px 16px;position:sticky;top:0;z-index:5;box-shadow:0 2px 10px #0002;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 header h1{font-size:20px;margin:0}.sub{opacity:.8;font-size:13px;margin-top:3px}
 main{max-width:1050px;margin:auto;padding:16px}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
 @media(max-width:800px){.grid{grid-template-columns:1fr}}
@@ -81,10 +81,55 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .coachboard-note{margin-top:8px}
 @media(max-width:700px){.coachboard{min-height:260px}.board-player{width:36px;height:36px;font-size:12px}}
 
+
+.auth-screen{position:fixed;inset:0;z-index:100;background:linear-gradient(135deg,#0c1f35,#1f5f99);display:grid;place-items:center;padding:20px}
+.auth-screen.hidden{display:none}
+.auth-card{width:min(440px,100%);background:#fff;border-radius:20px;padding:22px;box-shadow:0 20px 60px #0005}
+.auth-card h2{margin:0 0 6px;font-size:23px}.auth-card .logo{font-size:42px;margin-bottom:8px}
+.auth-card .field{display:grid;gap:5px;margin-top:12px}.auth-card label{font-size:12px;font-weight:700;color:var(--muted)}
+.auth-card input{width:100%}.auth-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.auth-message{margin-top:12px;padding:10px;border-radius:10px;background:#f3f6f9;color:#405064;font-size:13px;display:none}
+.auth-message.show{display:block}.cloud-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cloud-status{font-size:12px;padding:5px 9px;border-radius:999px;background:#ffffff1c;border:1px solid #ffffff35;color:#fff}
+.cloud-status.syncing{background:#fff5dc;color:#805a00;border-color:#e6c778}
+.cloud-status.ok{background:#e5f7ed;color:#126a39;border-color:#88d2a7}
+.cloud-status.error{background:#fdeaea;color:#9e2525;border-color:#efaaaa}
+.logout-btn{border:1px solid #ffffff55;background:#ffffff15;color:white;border-radius:9px;padding:7px 9px;cursor:pointer;font-size:12px}
+@media(max-width:600px){.auth-actions{grid-template-columns:1fr}.cloud-bar{margin-top:8px}}
+
 </style>
 </head>
 <body>
-<header><h1>🏒 Hockey Team – Coach</h1><div class="sub">Trainings, Spiele, Trainingslager und Anwesenheit</div></header>
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="logo">🏒</div>
+    <h2>Hockey Team – Coach</h2>
+    <div class="muted">Melde dich an, damit deine Planung auf Handy und PC synchron bleibt.</div>
+    <div class="field">
+      <label>E-Mail</label>
+      <input id="authEmail" type="email" autocomplete="email" placeholder="deine@email.ch">
+    </div>
+    <div class="field">
+      <label>Passwort</label>
+      <input id="authPassword" type="password" autocomplete="current-password" placeholder="Mindestens 6 Zeichen">
+    </div>
+    <div class="auth-actions">
+      <button class="btn primary" onclick="cloudSignIn()">Anmelden</button>
+      <button class="btn soft" onclick="cloudSignUp()">Konto erstellen</button>
+    </div>
+    <div id="authMessage" class="auth-message"></div>
+  </div>
+</div>
+<header>
+  <div>
+    <h1>🏒 Hockey Team – Coach</h1>
+    <div class="sub">Trainings, Spiele, Trainingslager und Anwesenheit</div>
+  </div>
+  <div class="cloud-bar">
+    <span id="cloudStatus" class="cloud-status">Nicht verbunden</span>
+    <button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
+  </div>
+</header>
 <main>
 <nav>
 <button class="btn primary tab" onclick="showTab('events',this)">Termine</button>
@@ -148,7 +193,11 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 </section>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
+const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const DEFAULT_PLAYERS=[{"name": "Noah Bürgi", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Philipp Holliger", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Benjamin Ansbach", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Samuel Wyss", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Michael Kiefer", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Noël Bauer", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Dario Neira", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Dominik Ramel", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Levin Hug", "role": "Feldspieler", "position": "Verteidiger", "shot": "Rechts"}, {"name": "Jannick Gasche", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Lukas Walser", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Colin Trotter", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Julian Gysin", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Silvano Renggli", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Stefano Peloso", "role": "Feldspieler", "position": "Verteidiger", "shot": "Rechts"}, {"name": "Gianluca Bruno", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Pascal Sahli", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Marc Sahli", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}];
 let data=JSON.parse(localStorage.getItem('hockeyCoachData_v13')||'null')||{
  players:DEFAULT_PLAYERS.map((p,i)=>({id:'p'+(i+1),...p})),
@@ -160,13 +209,23 @@ data.lineups ||= {};
 for(const p of data.players){ if(!('jerseyNumber' in p)) p.jerseyNumber=''; if(!('birthday' in p)) p.birthday=''; }
 data.boards ||= {};
 let currentType='training',selectedId=null;
+let cloudUser=null;
+let cloudReady=false;
+let cloudSaveTimer=null;
+let cloudSaving=false;
+let lastCloudUpdated='';
+let cloudPollTimer=null;
 const labels={
  training:{plural:'Trainings',single:'Training',icon:'🏒'},
  game:{plural:'Spiele',single:'Spiel',icon:'🥅'},
  camp:{plural:'Trainingslager',single:'Trainingslager',icon:'🏕️'}
 };
 
-function save(){localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));renderAll()}
+function save(){
+  localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
+  renderAll();
+  scheduleCloudSave();
+}
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function fmtDateLong(s){return new Intl.DateTimeFormat('de-CH',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function showTab(tab,btn){for(const id of ['events','players','stats'])document.getElementById(id+'Tab').classList.toggle('hidden',id!==tab);document.querySelectorAll('.tab').forEach(b=>b.className='btn soft tab');btn.className='btn primary tab';renderAll()}
@@ -549,7 +608,7 @@ function resetBoard(eventId){
 function saveBoardNote(eventId,value){
   ensureBoard(eventId);
   data.boards[eventId].note=value;
-  localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data))
+  localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));scheduleCloudSave()
 }
 
 function reportCSS(){return `body{font-family:Arial,sans-serif;color:#172033;margin:28px}h1{color:#10243f}h2{margin-top:28px;border-bottom:2px solid #10243f;padding-bottom:6px}.summary{background:#eef3f8;padding:12px;border-radius:8px;margin:10px 0}.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}.box{border:1px solid #ccd7e3;border-radius:8px;padding:10px}.present{color:#18864b}.absent{color:#c43d3d}.open{color:#b7791f}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left;font-size:13px}@media print{button{display:none}.event-report{page-break-after:always}.event-report:last-child{page-break-after:auto}}`}
@@ -579,8 +638,135 @@ function exportCSV(){
  a.download='hockey_anwesenheit.csv';
  a.click()
 }
+
+function setCloudStatus(text,type=''){
+  const el=document.getElementById('cloudStatus');
+  if(!el)return;
+  el.textContent=text;
+  el.className='cloud-status'+(type?' '+type:'');
+}
+function showAuthMessage(text,isError=false){
+  const el=document.getElementById('authMessage');
+  el.textContent=text;
+  el.className='auth-message show';
+  el.style.background=isError?'#fdeaea':'#f3f6f9';
+  el.style.color=isError?'#9e2525':'#405064';
+}
+async function cloudSignUp(){
+  const email=document.getElementById('authEmail').value.trim();
+  const password=document.getElementById('authPassword').value;
+  if(!email||password.length<6){showAuthMessage('Bitte E-Mail und ein Passwort mit mindestens 6 Zeichen eingeben.',true);return}
+  showAuthMessage('Konto wird erstellt …');
+  const {data:result,error}=await cloudClient.auth.signUp({email,password});
+  if(error){showAuthMessage(error.message,true);return}
+  if(result.session){
+    showAuthMessage('Konto erstellt. Die App wird geladen.');
+  }else{
+    showAuthMessage('Konto erstellt. Bitte bestätige zuerst die E-Mail, die Supabase dir geschickt hat.');
+  }
+}
+async function cloudSignIn(){
+  const email=document.getElementById('authEmail').value.trim();
+  const password=document.getElementById('authPassword').value;
+  if(!email||!password){showAuthMessage('Bitte E-Mail und Passwort eingeben.',true);return}
+  showAuthMessage('Anmeldung läuft …');
+  const {error}=await cloudClient.auth.signInWithPassword({email,password});
+  if(error){showAuthMessage('Anmeldung fehlgeschlagen: '+error.message,true)}
+}
+async function cloudSignOut(){
+  await cloudClient.auth.signOut();
+}
+function scheduleCloudSave(){
+  if(!cloudReady||!cloudUser)return;
+  clearTimeout(cloudSaveTimer);
+  setCloudStatus('Änderungen werden gespeichert …','syncing');
+  cloudSaveTimer=setTimeout(pushCloudState,700);
+}
+async function pushCloudState(){
+  if(!cloudReady||!cloudUser||cloudSaving)return;
+  cloudSaving=true;
+  const now=new Date().toISOString();
+  const payload={user_id:cloudUser.id,data:data,updated_at:now};
+  const {error}=await cloudClient.from('app_state').upsert(payload,{onConflict:'user_id'});
+  cloudSaving=false;
+  if(error){
+    setCloudStatus('Cloud-Fehler','error');
+    console.error(error);
+    return;
+  }
+  lastCloudUpdated=now;
+  setCloudStatus('Synchronisiert','ok');
+}
+async function loadCloudState({initial=false}={}){
+  if(!cloudUser)return;
+  setCloudStatus(initial?'Cloud-Daten werden geladen …':'Prüfe Cloud …','syncing');
+  const {data:row,error}=await cloudClient.from('app_state').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
+  if(error){
+    setCloudStatus('Cloud-Fehler','error');
+    console.error(error);
+    return;
+  }
+  if(row?.data){
+    if(initial||(!cloudSaving&&row.updated_at&&row.updated_at!==lastCloudUpdated)){
+      data=row.data;
+      data.players ||= [];
+      data.events ||= [];
+      data.attendance ||= {};
+      data.lineups ||= {};
+      data.boards ||= {};
+      for(const p of data.players){
+        if(!('jerseyNumber' in p))p.jerseyNumber='';
+        if(!('birthday' in p))p.birthday='';
+      }
+      localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
+      lastCloudUpdated=row.updated_at||'';
+      renderAll();
+    }
+    setCloudStatus('Synchronisiert','ok');
+  }else{
+    await pushCloudState();
+  }
+}
+function startCloudPolling(){
+  clearInterval(cloudPollTimer);
+  cloudPollTimer=setInterval(()=>loadCloudState(),5000);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&cloudUser)loadCloudState();
+  });
+}
+async function handleCloudSession(session){
+  cloudUser=session?.user||null;
+  const authScreen=document.getElementById('authScreen');
+  const logoutBtn=document.getElementById('logoutBtn');
+  if(!cloudUser){
+    cloudReady=false;
+    authScreen.classList.remove('hidden');
+    logoutBtn.style.display='none';
+    setCloudStatus('Nicht angemeldet');
+    clearInterval(cloudPollTimer);
+    return;
+  }
+  authScreen.classList.add('hidden');
+  logoutBtn.style.display='inline-block';
+  cloudReady=false;
+  await loadCloudState({initial:true});
+  cloudReady=true;
+  setCloudStatus('Synchronisiert','ok');
+  startCloudPolling();
+}
+async function initCloud(){
+  const {data:{session}}=await cloudClient.auth.getSession();
+  await handleCloudSession(session);
+  cloudClient.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
+      await handleCloudSession(session);
+    }
+  });
+}
+
 function renderAll(){renderEvents();renderSelected();renderPlayers();renderStats()}
-renderAll()
+renderAll();
+initCloud();
 </script>
 </body>
 </html>
