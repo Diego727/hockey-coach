@@ -153,11 +153,11 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 <button class="btn primary" onclick="addEvent()">Hinzufügen</button>
 </div>
 <div class="row" style="margin-top:8px">
-<button id="scheduleBtn" class="btn soft" onclick="generateSchedule()">Mo/Do für 8 Wochen erstellen</button>
+<button id="scheduleBtn" class="btn soft" onclick="generateSeasonTrainings()">Saisontrainings 13.08.2026–31.03.2027 erstellen</button>
 <button class="btn primary" onclick="downloadCategoryReport()">Rapport herunterladen</button>
 <button class="btn ghost" onclick="downloadAllReport()">Gesamtrapport</button>
 </div>
-<div id="eventList"></div>
+<p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p><div id="eventList"></div>
 </div>
 
 <div class="card">
@@ -207,7 +207,17 @@ let data=JSON.parse(localStorage.getItem('hockeyCoachData_v13')||'null')||{
 };
 data.lineups ||= {};
 for(const p of data.players){ if(!('jerseyNumber' in p)) p.jerseyNumber=''; if(!('birthday' in p)) p.birthday=''; }
+
 data.boards ||= {};
+for(const e of data.events){
+  if(e.type==='training'){
+    data.attendance[e.id] ||= {};
+    for(const p of data.players){
+      if(!(p.id in data.attendance[e.id])) data.attendance[e.id][p.id]='present';
+    }
+  }
+}
+
 let currentType='training',selectedId=null;
 let cloudUser=null;
 let cloudReady=false;
@@ -229,19 +239,55 @@ function save(){
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function fmtDateLong(s){return new Intl.DateTimeFormat('de-CH',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function showTab(tab,btn){for(const id of ['events','players','stats'])document.getElementById(id+'Tab').classList.toggle('hidden',id!==tab);document.querySelectorAll('.tab').forEach(b=>b.className='btn soft tab');btn.className='btn primary tab';renderAll()}
-function setType(type){currentType=type;selectedId=null;document.querySelectorAll('.type-switch button').forEach(b=>b.classList.remove('active'));document.getElementById(type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp').classList.add('active');document.getElementById('scheduleBtn').style.display=type==='training'?'inline-block':'none';renderAll()}
+function setType(type){currentType=type;selectedId=null;document.querySelectorAll('.type-switch button').forEach(b=>b.classList.remove('active'));document.getElementById(type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp').classList.add('active');document.getElementById('scheduleBtn').style.display=type==='training'?'inline-block':'none';document.getElementById('trainingHint').style.display=type==='training'?'block':'none';renderAll()}
 function addEvent(){
  const date=newDate.value,time=newTime.value||'20:00',title=newTitle.value.trim();
  if(!date)return alert('Bitte Datum wählen.');
  const id=currentType+'_'+date+'_'+time+'_'+Date.now();
  data.events.push({id,type:currentType,date,time,title});
- data.attendance[id]={};selectedId=id;newTitle.value='';save()
+ data.attendance[id]={};
+ if(currentType==='training'){
+   for(const p of data.players) data.attendance[id][p.id]='present';
+ }
+ selectedId=id;newTitle.value='';save()
 }
-function generateSchedule(){
+function generateSeasonTrainings(){
  if(currentType!=='training')return;
- let start=new Date();start.setHours(12,0,0,0);
- for(let i=0;i<56;i++){const d=new Date(start);d.setDate(start.getDate()+i);if([1,4].includes(d.getDay())){const ds=d.toISOString().slice(0,10);if(!data.events.some(x=>x.type==='training'&&x.date===ds)){const id='training_'+ds+'_20:00_'+i;data.events.push({id,type:'training',date:ds,time:'20:00',title:''});data.attendance[id]={}}}}
- save()
+ const start=new Date('2026-08-13T12:00:00');
+ const end=new Date('2027-03-31T12:00:00');
+ let created=0;
+
+ for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+   if(![1,4].includes(d.getDay()))continue;
+
+   const ds=[
+     d.getFullYear(),
+     String(d.getMonth()+1).padStart(2,'0'),
+     String(d.getDate()).padStart(2,'0')
+   ].join('-');
+
+   const existing=data.events.find(e=>e.type==='training'&&e.date===ds);
+   if(existing){
+     data.attendance[existing.id] ||= {};
+     for(const p of data.players){
+       if(!(p.id in data.attendance[existing.id])) data.attendance[existing.id][p.id]='present';
+     }
+     continue;
+   }
+
+   const time='20:00';
+   const id='training_'+ds+'_'+time+'_'+Date.now()+'_'+created;
+   data.events.push({id,type:'training',date:ds,time,title:''});
+   data.attendance[id]={};
+   for(const p of data.players) data.attendance[id][p.id]='present';
+   created++;
+ }
+
+ save();
+ alert(created
+   ? created+' Saisontrainings wurden erstellt. Alle Spieler sind standardmässig dabei.'
+   : 'Alle Saisontrainings sind bereits vorhanden.'
+ );
 }
 function selectEvent(id){selectedId=id;renderAll()}
 function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(selectedId===id)selectedId=null;save()}
@@ -255,7 +301,7 @@ function setStatus(pid,status){
 function addPlayer(){
  const name=playerName.value.trim(),position=playerPosition.value,shot=playerShot.value;
  if(!name)return alert('Bitte Namen eingeben.');
- data.players.push({
+ const newPlayer={
    id:'p'+Date.now(),
    name,
    role:position==='Goalie'?'Goalie':'Feldspieler',
@@ -263,7 +309,16 @@ function addPlayer(){
    shot,
    jerseyNumber:playerNumber.value.trim(),
    birthday:playerBirthday.value
- });
+ };
+ data.players.push(newPlayer);
+
+ for(const e of data.events){
+   if(e.type==='training'){
+     data.attendance[e.id] ||= {};
+     data.attendance[e.id][newPlayer.id]='present';
+   }
+ }
+
  playerName.value='';playerNumber.value='';playerBirthday.value='';save()
 }
 function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.players=data.players.filter(p=>p.id!==id);for(const a of Object.values(data.attendance))delete a[id];save()}
