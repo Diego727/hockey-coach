@@ -147,7 +147,7 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
   <div class="auth-card">
     <div class="logo">🏒</div>
     <h2>Hockey Team – Coach</h2>
-    <div class="muted">Melde dich an, damit deine Planung auf Handy und PC synchron bleibt.</div>
+    <div class="muted">Melde dich an. Berechtigte Coaches sehen und bearbeiten dieselben Mannschaftsdaten.</div>
     <div class="field">
       <label>E-Mail</label>
       <input id="authEmail" type="email" autocomplete="email" placeholder="deine@email.ch">
@@ -259,6 +259,7 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
 const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const SHARED_CLUB_ID='7c807357-d90b-4ca4-9d20-f61a82ff6065';
 const DEFAULT_PLAYERS=[{"name": "Noah Bürgi", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Philipp Holliger", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Benjamin Ansbach", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Samuel Wyss", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Michael Kiefer", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Noël Bauer", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Dario Neira", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Dominik Ramel", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Levin Hug", "role": "Feldspieler", "position": "Verteidiger", "shot": "Rechts"}, {"name": "Jannick Gasche", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Lukas Walser", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Colin Trotter", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Julian Gysin", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Silvano Renggli", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Stefano Peloso", "role": "Feldspieler", "position": "Verteidiger", "shot": "Rechts"}, {"name": "Gianluca Bruno", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Pascal Sahli", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Marc Sahli", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}];
 const EMPTY_TEAM_DATA=()=>({
  players:DEFAULT_PLAYERS.map((p,i)=>({id:'p'+(i+1),...p})),
@@ -1279,8 +1280,8 @@ async function pushCloudState(){
   cloudSaving=true;
   const now=new Date().toISOString();
   if(activeTeamKey)cloudRoot.teams[activeTeamKey]=data;
-  const payload={user_id:cloudUser.id,data:cloudRoot,updated_at:now};
-  const {error}=await cloudClient.from('app_state').upsert(payload,{onConflict:'user_id'});
+  const payload={club_id:SHARED_CLUB_ID,data:cloudRoot,updated_at:now};
+  const {error}=await cloudClient.from('club_state').upsert(payload,{onConflict:'club_id'});
   cloudSaving=false;
   if(error){
     setCloudStatus('Cloud-Fehler','error');
@@ -1293,7 +1294,7 @@ async function pushCloudState(){
 async function loadCloudState({initial=false}={}){
   if(!cloudUser)return;
   setCloudStatus(initial?'Cloud-Daten werden geladen …':'Prüfe Cloud …','syncing');
-  const {data:row,error}=await cloudClient.from('app_state').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
+  const {data:row,error}=await cloudClient.from('club_state').select('data,updated_at').eq('club_id',SHARED_CLUB_ID).maybeSingle();
   if(error){
     setCloudStatus('Cloud-Fehler','error');
     console.error(error);
