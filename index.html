@@ -168,13 +168,13 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
     <h2>Mannschaft auswählen</h2>
     <p>Welche Mannschaft möchtest du planen?</p>
     <div class="team-options">
-      <button class="team-option" onclick="selectTeam('third')">
-        <strong>🏒 SC Altstadt 3. Liga</strong>
-        <span>Bestehende Mannschaft und bisherige Daten</span>
-      </button>
       <button class="team-option" onclick="selectTeam('second')">
-        <strong>🥅 SC Altstadt 2. Liga</strong>
-        <span>Eigener Kader und eigene Planung</span>
+        <strong>🏒 SC Altstadt 2. Liga</strong>
+        <span>Coach: Diego Schwarzenbach · bestehende Daten</span>
+      </button>
+      <button class="team-option" onclick="selectTeam('third')">
+        <strong>🥅 SC Altstadt 3. Liga</strong>
+        <span>Coach: Sandro Zorzin · noch nicht eingerichtet</span>
       </button>
     </div>
   </div>
@@ -289,7 +289,7 @@ function normalizeTeamData(teamData){
   return normalized;
 }
 let data=normalizeTeamData(JSON.parse(localStorage.getItem('hockeyCoachData_v13')||'null')||EMPTY_TEAM_DATA());
-let cloudRoot={teams:{third:data,second:EMPTY_TEAM_DATA()}};
+let cloudRoot={teams:{second:data,third:{players:[],events:[],attendance:{},lineups:{},boards:{}}}};
 let activeTeamKey=null;
 
 let currentType='training',selectedId=null;
@@ -304,19 +304,43 @@ const labels={
  game:{plural:'Spiele',single:'Spiel',icon:'🥅'},
  camp:{plural:'Trainingslager',single:'Trainingslager',icon:'🏕️'}
 };
-const TEAM_NAMES={third:'SC Altstadt 3. Liga',second:'SC Altstadt 2. Liga'};
+const TEAM_NAMES={
+  second:'SC Altstadt 2. Liga',
+  third:'SC Altstadt 3. Liga'
+};
+const TEAM_COACHES={
+  second:'Diego Schwarzenbach',
+  third:'Sandro Zorzin'
+};
 function showTeamSelection(){
   if(cloudUser)document.getElementById('teamScreen').classList.remove('hidden');
 }
 function selectTeam(teamKey){
   activeTeamKey=teamKey;
   cloudRoot.teams ||= {};
-  cloudRoot.teams[teamKey]=normalizeTeamData(cloudRoot.teams[teamKey]||EMPTY_TEAM_DATA());
+
+  if(!cloudRoot.teams[teamKey]){
+    cloudRoot.teams[teamKey]=teamKey==='third'
+      ? {players:[],events:[],attendance:{},lineups:{},boards:{}}
+      : EMPTY_TEAM_DATA();
+  }
+
+  if(teamKey==='second'){
+    cloudRoot.teams[teamKey]=normalizeTeamData(cloudRoot.teams[teamKey]);
+  }else{
+    const third=cloudRoot.teams[teamKey];
+    third.players ||= [];
+    third.events ||= [];
+    third.attendance ||= {};
+    third.lineups ||= {};
+    third.boards ||= {};
+  }
+
   data=cloudRoot.teams[teamKey];
   localStorage.setItem('hockeyCoachActiveTeam',teamKey);
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
   document.getElementById('teamScreen').classList.add('hidden');
-  document.getElementById('activeTeamLabel').textContent=TEAM_NAMES[teamKey];
+  document.getElementById('activeTeamLabel').textContent=`${TEAM_NAMES[teamKey]} · Coach ${TEAM_COACHES[teamKey]}`;
   document.getElementById('teamSwitchBtn').style.display='inline-block';
   selectedId=null;
   renderAll();
@@ -1280,11 +1304,16 @@ async function loadCloudState({initial=false}={}){
       if(row.data.teams){
         cloudRoot=row.data;
       }else{
-        cloudRoot={teams:{third:normalizeTeamData(row.data),second:EMPTY_TEAM_DATA()}};
+        cloudRoot={teams:{second:normalizeTeamData(row.data),third:{players:[],events:[],attendance:{},lineups:{},boards:{}}}};
       }
       cloudRoot.teams ||= {};
-      cloudRoot.teams.third=normalizeTeamData(cloudRoot.teams.third||EMPTY_TEAM_DATA());
       cloudRoot.teams.second=normalizeTeamData(cloudRoot.teams.second||EMPTY_TEAM_DATA());
+      cloudRoot.teams.third=cloudRoot.teams.third||{players:[],events:[],attendance:{},lineups:{},boards:{}};
+      cloudRoot.teams.third.players ||= [];
+      cloudRoot.teams.third.events ||= [];
+      cloudRoot.teams.third.attendance ||= {};
+      cloudRoot.teams.third.lineups ||= {};
+      cloudRoot.teams.third.boards ||= {};
       lastCloudUpdated=row.updated_at||'';
       if(activeTeamKey){
         data=cloudRoot.teams[activeTeamKey];
@@ -1294,7 +1323,7 @@ async function loadCloudState({initial=false}={}){
     }
     setCloudStatus('Synchronisiert','ok');
   }else{
-    cloudRoot={teams:{third:normalizeTeamData(data),second:EMPTY_TEAM_DATA()}};
+    cloudRoot={teams:{second:normalizeTeamData(data),third:{players:[],events:[],attendance:{},lineups:{},boards:{}}}};
     await pushCloudState();
   }
 }
