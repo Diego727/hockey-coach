@@ -112,6 +112,22 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .quick-cell.open{background:#fff5dc;color:#805a00}
 .quick-legend{font-size:12px;color:var(--muted)}
 
+
+.selected-card{align-self:start}
+.attendance-panel{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.attendance-panel-head{position:sticky;top:78px;z-index:4;background:#fff;border-bottom:1px solid var(--line);padding:10px 12px;border-radius:14px 14px 0 0}
+.attendance-scroll{max-height:58vh;overflow:auto;padding:0 12px}
+.attendance-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.collapse-section{margin-top:14px;border:1px solid var(--line);border-radius:13px;background:#fff}
+.collapse-section summary{cursor:pointer;font-weight:750;padding:12px;list-style:none}
+.collapse-section summary::-webkit-details-marker{display:none}
+.collapse-section[open] summary{border-bottom:1px solid var(--line)}
+.collapse-body{padding:12px}
+@media(max-width:800px){
+  .attendance-panel-head{top:74px}
+  .attendance-scroll{max-height:52vh}
+}
+
 </style>
 </head>
 <body>
@@ -175,7 +191,7 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 <p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p><div id="eventList"></div><div id="quickPlanner" class="quick-planner"></div>
 </div>
 
-<div class="card">
+<div class="card selected-card">
 <h2 id="selectedTitle">Termin auswählen</h2>
 <div id="selectedBody" class="muted">Wähle links einen Termin aus.</div>
 </div>
@@ -315,6 +331,15 @@ function setStatus(pid,status){
   if(status!=='present' && data.lineups?.[selectedId]) clearPlayerFromLineup(selectedId,pid);
   save()
 }
+function setAllAttendance(eventId,status){
+  data.attendance[eventId] ||= {};
+  for(const p of data.players){
+    data.attendance[eventId][p.id]=status;
+    if(status!=='present'&&data.lineups?.[eventId])clearPlayerFromLineup(eventId,p.id);
+  }
+  save();
+}
+
 function addPlayer(){
  const name=playerName.value.trim(),position=playerPosition.value,shot=playerShot.value;
  if(!name)return alert('Bitte Namen eingeben.');
@@ -358,31 +383,53 @@ function renderSelected(){
  selectedTitle.textContent=`${labels[e.type].single}: ${fmtDate(e.date)} · ${e.time}`;
  const a=data.attendance[e.id]||{},present=data.players.filter(p=>a[p.id]==='present'),absent=data.players.filter(p=>a[p.id]==='absent'),unknown=data.players.filter(p=>!a[p.id]||a[p.id]==='unknown');
  const forwards=present.filter(p=>p.position==='Stürmer').length,defenders=present.filter(p=>p.position==='Verteidiger').length,goalies=present.filter(p=>p.position==='Goalie').length,left=present.filter(p=>p.shot==='Links').length,right=present.filter(p=>p.shot==='Rechts').length;
- selectedBody.innerHTML=`${e.title?`<p><strong>${e.title}</strong></p>`:''}<div class="counts"><div class="count present"><b>${present.length}</b>Dabei</div><div class="count absent"><b>${absent.length}</b>Nicht dabei</div><div class="count unknown"><b>${unknown.length}</b>Offen</div></div><p><strong>${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Goalies</strong></p><p class="muted">${left} Linksschützen · ${right} Rechtsschützen</p><button class="btn soft" onclick="downloadEventReport('${e.id}')">PDF dieses Termins</button>
-<div class="lineup-wrap">
-  <h3>Aufstellung – 4 Linien</h3>
-  <p class="muted">Im Drag-and-drop erscheinen nur Spieler, die für diesen Termin als „dabei“ markiert sind.</p>
-  <div id="playerPool" class="player-pool"></div>
-  <div id="lineupBoard" class="lineup-board" style="margin-top:10px"></div>
+ selectedBody.innerHTML=`${e.title?`<p><strong>${e.title}</strong></p>`:''}
+<div class="counts">
+  <div class="count present"><b>${present.length}</b>Dabei</div>
+  <div class="count absent"><b>${absent.length}</b>Nicht dabei</div>
+  <div class="count unknown"><b>${unknown.length}</b>Offen</div>
 </div>
-<div class="coachboard-wrap">
-  <h3>Coachboard</h3>
-  <div class="coachboard-toolbar">
-    <button class="btn soft" onclick="addBoardPlayer('${e.id}','home')">+ Eigener Spieler</button>
-    <button class="btn soft" onclick="addBoardPlayer('${e.id}','away')">+ Gegner</button>
-    <button class="btn soft" onclick="addBoardPuck('${e.id}')">+ Scheibe</button>
-    <button class="btn soft" id="drawBtn" onclick="toggleDrawMode('${e.id}')">Zeichnen</button>
-    <button class="btn ghost" onclick="clearBoardDrawings('${e.id}')">Zeichnung löschen</button>
-    <button class="btn danger" onclick="resetBoard('${e.id}')">Board leeren</button>
-  </div>
-  <div class="coachboard-shell">
-    <div id="coachboard" class="coachboard">
-      <canvas id="boardCanvas" class="board-canvas"></canvas>
+<p><strong>${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Goalies</strong></p>
+<p class="muted">${left} Linksschützen · ${right} Rechtsschützen</p>
+<div class="attendance-panel">
+  <div class="attendance-panel-head">
+    <strong>Spieler auswählen</strong>
+    <div class="muted">Direkt hier Abmeldungen anklicken – kein Scrollen durch Aufstellung oder Coachboard nötig.</div>
+    <div class="attendance-actions">
+      <button class="btn soft" onclick="setAllAttendance('${e.id}','present')">Alle dabei</button>
+      <button class="btn ghost" onclick="setAllAttendance('${e.id}','open')">Alle offen</button>
+      <button class="btn soft" onclick="downloadEventReport('${e.id}')">PDF dieses Termins</button>
     </div>
-    <textarea id="boardNote" class="coachboard-note" placeholder="Notizen zum System oder zur Übung" onchange="saveBoardNote('${e.id}',this.value)"></textarea>
   </div>
+  <div id="attendanceList" class="attendance-scroll"></div>
 </div>
-<div id="attendanceList"></div>`;
+<details class="collapse-section">
+  <summary>Aufstellung – 4 Linien</summary>
+  <div class="collapse-body">
+    <p class="muted">Im Drag-and-drop erscheinen nur Spieler, die für diesen Termin als „dabei“ markiert sind.</p>
+    <div id="playerPool" class="player-pool"></div>
+    <div id="lineupBoard" class="lineup-board" style="margin-top:10px"></div>
+  </div>
+</details>
+<details class="collapse-section">
+  <summary>Coachboard</summary>
+  <div class="collapse-body">
+    <div class="coachboard-toolbar">
+      <button class="btn soft" onclick="addBoardPlayer('${e.id}','home')">+ Eigener Spieler</button>
+      <button class="btn soft" onclick="addBoardPlayer('${e.id}','away')">+ Gegner</button>
+      <button class="btn soft" onclick="addBoardPuck('${e.id}')">+ Scheibe</button>
+      <button class="btn soft" id="drawBtn" onclick="toggleDrawMode('${e.id}')">Zeichnen</button>
+      <button class="btn ghost" onclick="clearBoardDrawings('${e.id}')">Zeichnung löschen</button>
+      <button class="btn danger" onclick="resetBoard('${e.id}')">Board leeren</button>
+    </div>
+    <div class="coachboard-shell">
+      <div id="coachboard" class="coachboard">
+        <canvas id="boardCanvas" class="board-canvas"></canvas>
+      </div>
+      <textarea id="boardNote" class="coachboard-note" placeholder="Notizen zum System oder zur Übung" onchange="saveBoardNote('${e.id}',this.value)"></textarea>
+    </div>
+  </div>
+</details>`;
  renderLineup(e.id);
  renderCoachboard(e.id);
  for(const p of data.players){const s=a[p.id]||'unknown',row=document.createElement('div');row.className='player';row.innerHTML=`<div><div class="name">${p.name}</div><div class="role">${p.position||p.role} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div><div class="status"><button class="${s==='present'?'on-present':''}" onclick="setStatus('${p.id}','present')">✓</button><button class="${s==='absent'?'on-absent':''}" onclick="setStatus('${p.id}','absent')">✕</button><button class="${s==='unknown'?'on-unknown':''}" onclick="setStatus('${p.id}','unknown')">?</button></div>`;attendanceList.appendChild(row)}
