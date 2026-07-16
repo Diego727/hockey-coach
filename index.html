@@ -97,6 +97,21 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .logout-btn{border:1px solid #ffffff55;background:#ffffff15;color:white;border-radius:9px;padding:7px 9px;cursor:pointer;font-size:12px}
 @media(max-width:600px){.auth-actions{grid-template-columns:1fr}.cloud-bar{margin-top:8px}}
 
+
+.quick-planner{margin-top:18px}
+.quick-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.quick-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+.quick-table{border-collapse:separate;border-spacing:0;min-width:760px;width:100%}
+.quick-table th,.quick-table td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px;text-align:center;font-size:12px}
+.quick-table th{position:sticky;top:0;background:#f3f6f9;z-index:2}
+.quick-table th:first-child,.quick-table td:first-child{position:sticky;left:0;background:#fff;text-align:left;z-index:1;min-width:175px}
+.quick-table th:first-child{z-index:3;background:#f3f6f9}
+.quick-cell{width:34px;height:30px;border-radius:7px;border:0;font-weight:800;padding:0;cursor:pointer}
+.quick-cell.present{background:#e5f7ed;color:#126a39}
+.quick-cell.absent{background:#fdeaea;color:#9e2525}
+.quick-cell.open{background:#fff5dc;color:#805a00}
+.quick-legend{font-size:12px;color:var(--muted)}
+
 </style>
 </head>
 <body>
@@ -154,10 +169,10 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 </div>
 <div class="row" style="margin-top:8px">
 <button id="scheduleBtn" class="btn soft" onclick="generateSeasonTrainings()">Saisontrainings 13.08.2026–31.03.2027 erstellen</button>
-<button class="btn primary" onclick="downloadCategoryReport()">Rapport herunterladen</button>
-<button class="btn ghost" onclick="downloadAllReport()">Gesamtrapport</button>
+<button class="btn primary" onclick="downloadCategoryReport()">PDF herunterladen</button><button class="btn soft" onclick="downloadMonthlyTrainingPdf()">Monats-PDF</button>
+<button class="btn ghost" onclick="downloadAllReport()">Gesamt-PDF</button>
 </div>
-<p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p><div id="eventList"></div>
+<p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p><div id="eventList"></div><div id="quickPlanner" class="quick-planner"></div>
 </div>
 
 <div class="card">
@@ -193,6 +208,8 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 </section>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
@@ -341,7 +358,7 @@ function renderSelected(){
  selectedTitle.textContent=`${labels[e.type].single}: ${fmtDate(e.date)} · ${e.time}`;
  const a=data.attendance[e.id]||{},present=data.players.filter(p=>a[p.id]==='present'),absent=data.players.filter(p=>a[p.id]==='absent'),unknown=data.players.filter(p=>!a[p.id]||a[p.id]==='unknown');
  const forwards=present.filter(p=>p.position==='Stürmer').length,defenders=present.filter(p=>p.position==='Verteidiger').length,goalies=present.filter(p=>p.position==='Goalie').length,left=present.filter(p=>p.shot==='Links').length,right=present.filter(p=>p.shot==='Rechts').length;
- selectedBody.innerHTML=`${e.title?`<p><strong>${e.title}</strong></p>`:''}<div class="counts"><div class="count present"><b>${present.length}</b>Dabei</div><div class="count absent"><b>${absent.length}</b>Nicht dabei</div><div class="count unknown"><b>${unknown.length}</b>Offen</div></div><p><strong>${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Goalies</strong></p><p class="muted">${left} Linksschützen · ${right} Rechtsschützen</p><button class="btn soft" onclick="downloadEventReport('${e.id}')">Rapport dieses Termins</button>
+ selectedBody.innerHTML=`${e.title?`<p><strong>${e.title}</strong></p>`:''}<div class="counts"><div class="count present"><b>${present.length}</b>Dabei</div><div class="count absent"><b>${absent.length}</b>Nicht dabei</div><div class="count unknown"><b>${unknown.length}</b>Offen</div></div><p><strong>${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Goalies</strong></p><p class="muted">${left} Linksschützen · ${right} Rechtsschützen</p><button class="btn soft" onclick="downloadEventReport('${e.id}')">PDF dieses Termins</button>
 <div class="lineup-wrap">
   <h3>Aufstellung – 4 Linien</h3>
   <p class="muted">Im Drag-and-drop erscheinen nur Spieler, die für diesen Termin als „dabei“ markiert sind.</p>
@@ -666,15 +683,308 @@ function saveBoardNote(eventId,value){
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));scheduleCloudSave()
 }
 
-function reportCSS(){return `body{font-family:Arial,sans-serif;color:#172033;margin:28px}h1{color:#10243f}h2{margin-top:28px;border-bottom:2px solid #10243f;padding-bottom:6px}.summary{background:#eef3f8;padding:12px;border-radius:8px;margin:10px 0}.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}.box{border:1px solid #ccd7e3;border-radius:8px;padding:10px}.present{color:#18864b}.absent{color:#c43d3d}.open{color:#b7791f}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left;font-size:13px}@media print{button{display:none}.event-report{page-break-after:always}.event-report:last-child{page-break-after:auto}}`}
-function buildEventSection(e){const a=data.attendance[e.id]||{},groups={present:[],absent:[],open:[]};for(const p of data.players){groups[a[p.id]||'open'].push(p)}const rows=g=>groups[g].map(p=>`<tr><td>${p.name}</td><td>${p.jerseyNumber||'–'}</td><td>${fmtBirthday(p.birthday)}</td><td>${p.position||p.role}</td><td>${p.shot||'–'}</td></tr>`).join('')||'<tr><td colspan="3">–</td></tr>';return `<section class="event-report"><h2>${labels[e.type].icon} ${labels[e.type].single}: ${fmtDateLong(e.date)} · ${e.time}</h2>${e.title?`<p><strong>${e.title}</strong></p>`:''}<div class="summary"><strong>${groups.present.length} dabei · ${groups.absent.length} nicht dabei · ${groups.open.length} offen</strong></div><div class="cols"><div class="box"><h3 class="present">Dabei</h3><table><tr><th>Spieler</th><th>Nr.</th><th>Geburtstag</th><th>Position</th><th>Schuss</th></tr>${rows('present')}</table></div><div class="box"><h3 class="absent">Nicht dabei</h3><table><tr><th>Spieler</th><th>Nr.</th><th>Geburtstag</th><th>Position</th><th>Schuss</th></tr>${rows('absent')}</table></div><div class="box"><h3 class="open">Offen</h3><table><tr><th>Spieler</th><th>Nr.</th><th>Geburtstag</th><th>Position</th><th>Schuss</th></tr>${rows('open')}</table></div></div>${lineupReport(e.id)}${data.boards?.[e.id]?.note?`<h3>Coachboard-Notiz</h3><p>${data.boards[e.id].note}</p>`:''}</section>`}
-function downloadHTML(filename,title,content){const doc=`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${title}</title><style>${reportCSS()}
+
+function safePdfText(value){
+  return String(value ?? '').replace(/[^\x20-\x7EÀ-ÿ]/g,'');
+}
+function pdfStatusGroups(eventId){
+  const attendance=data.attendance[eventId]||{};
+  const groups={present:[],absent:[],open:[]};
+  for(const p of data.players){
+    const status=attendance[p.id]||'open';
+    groups[status].push(p);
+  }
+  return groups;
+}
+function pdfPlayerRow(p){
+  return [
+    p.jerseyNumber||'–',
+    p.name,
+    fmtBirthday(p.birthday),
+    p.position||p.role||'–',
+    p.shot||'–'
+  ];
+}
+function pdfLineupRows(eventId){
+  ensureLineup(eventId);
+  const pname=pid=>{
+    const p=data.players.find(x=>x.id===pid);
+    return p?p.name:'–';
+  };
+  const rows=[];
+  rows.push(['Goalies',pname(data.lineups[eventId].goalies.G1),pname(data.lineups[eventId].goalies.G2),'','','']);
+  for(let line=1;line<=4;line++){
+    rows.push([
+      String(line),
+      pname(data.lineups[eventId][line].LD),
+      pname(data.lineups[eventId][line].RD),
+      pname(data.lineups[eventId][line].LW),
+      pname(data.lineups[eventId][line].C),
+      pname(data.lineups[eventId][line].RW)
+    ]);
+  }
+  return rows;
+}
+function addPdfHeader(doc,title,event){
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(18);
+  doc.text('SC Altstadt',14,16);
+  doc.setFontSize(14);
+  doc.text(title,14,24);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  if(event){
+    doc.text(`Datum: ${fmtDateLong(event.date)}`,14,32);
+    doc.text(`Zeit: ${event.time}`,14,38);
+    if(event.title)doc.text(`Bezeichnung: ${safePdfText(event.title)}`,14,44);
+  }
+}
+function addSectionTitle(doc,text,y){
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.text(text,14,y);
+  return y+4;
+}
+function addAttendanceTables(doc,event,startY){
+  const groups=pdfStatusGroups(event.id);
+  let y=startY;
+
+  const summary=`Dabei: ${groups.present.length}   Nicht dabei: ${groups.absent.length}   Offen: ${groups.open.length}`;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.text(summary,14,y);
+  y+=6;
+
+  const sections=[
+    ['Dabei',groups.present],
+    ['Nicht dabei',groups.absent],
+    ['Offen',groups.open]
+  ];
+
+  for(const [title,players] of sections){
+    y=addSectionTitle(doc,title,y+3);
+    doc.autoTable({
+      startY:y,
+      head:[['Nr.','Spieler','Geburtstag','Position','Schuss']],
+      body:players.length?players.map(pdfPlayerRow):[['–','–','–','–','–']],
+      margin:{left:14,right:14},
+      styles:{fontSize:8,cellPadding:2},
+      headStyles:{fillColor:[16,36,63]},
+      theme:'grid'
+    });
+    y=doc.lastAutoTable.finalY+4;
+    if(y>255){
+      doc.addPage();
+      y=18;
+    }
+  }
+  return y;
+}
+function addLineupTable(doc,event,startY){
+  let y=startY;
+  y=addSectionTitle(doc,'Aufstellung',y+3);
+  doc.autoTable({
+    startY:y,
+    head:[['Linie','LV','RV','LF','C','RF']],
+    body:pdfLineupRows(event.id),
+    margin:{left:14,right:14},
+    styles:{fontSize:8,cellPadding:2},
+    headStyles:{fillColor:[31,95,153]},
+    theme:'grid'
+  });
+  return doc.lastAutoTable.finalY+5;
+}
+function addCoachboardInfo(doc,event,startY){
+  ensureBoard(event.id);
+  const board=data.boards[event.id];
+  let y=startY;
+  if(y>245){doc.addPage();y=18}
+  y=addSectionTitle(doc,'Coachboard',y+3);
+
+  if(board.drawing){
+    try{
+      const imgWidth=180;
+      const imgHeight=90;
+      if(y+imgHeight>280){doc.addPage();y=18}
+      doc.addImage(board.drawing,'PNG',14,y,imgWidth,imgHeight);
+      y+=imgHeight+5;
+    }catch(err){
+      console.warn('Coachboard-Bild konnte nicht eingefügt werden',err);
+    }
+  }else{
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9);
+    doc.text('Keine Coachboard-Zeichnung vorhanden.',14,y+4);
+    y+=9;
+  }
+
+  if(board.note){
+    const lines=doc.splitTextToSize('Notizen: '+safePdfText(board.note),180);
+    if(y+lines.length*5>280){doc.addPage();y=18}
+    doc.setFontSize(9);
+    doc.text(lines,14,y);
+    y+=lines.length*5;
+  }
+  return y;
+}
+function addEventToPdf(doc,event,isFirst=true){
+  if(!isFirst)doc.addPage();
+  const title=`${labels[event.type].single}-Rapport`;
+  addPdfHeader(doc,title,event);
+  let y=event.title?50:44;
+  y=addAttendanceTables(doc,event,y);
+  if(y>245){doc.addPage();y=18}
+  y=addLineupTable(doc,event,y);
+  addCoachboardInfo(doc,event,y);
+}
+function downloadEventReport(id){
+  const event=data.events.find(x=>x.id===id);
+  if(!event)return;
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  addEventToPdf(doc,event,true);
+  doc.save(`${labels[event.type].single}_${event.date}.pdf`);
+}
+function downloadCategoryReport(){
+  const events=data.events
+    .filter(e=>e.type===currentType)
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(!events.length)return alert('Noch keine Termine vorhanden.');
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  events.forEach((event,index)=>addEventToPdf(doc,event,index===0));
+  doc.save(`${labels[currentType].plural}_Rapport.pdf`);
+}
+function downloadAllReport(){
+  const events=[...data.events].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(!events.length)return alert('Noch keine Termine vorhanden.');
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  events.forEach((event,index)=>addEventToPdf(doc,event,index===0));
+  doc.save('Gesamtrapport_Hockey.pdf');
+}
 
 
-</style></head><body><button onclick="window.print()">Als PDF drucken / speichern</button><h1>${title}</h1>${content}</body></html>`;const blob=new Blob([doc],{type:'text/html;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();URL.revokeObjectURL(a.href)}
-function downloadEventReport(id){const e=data.events.find(x=>x.id===id);downloadHTML(`${labels[e.type].single}_${e.date}.html`,`${labels[e.type].single}-Rapport`,buildEventSection(e))}
-function downloadCategoryReport(){const events=data.events.filter(e=>e.type===currentType).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));if(!events.length)return alert('Noch keine Termine vorhanden.');downloadHTML(`${labels[currentType].plural}_Rapport.html`,`${labels[currentType].plural}-Rapport`,events.map(buildEventSection).join(''))}
-function downloadAllReport(){const events=[...data.events].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));if(!events.length)return alert('Noch keine Termine vorhanden.');downloadHTML('Gesamtrapport_Hockey.html','Gesamtrapport Hockey',events.map(buildEventSection).join(''))}
+let quickMonth='2026-08';
+
+function monthLabel(month){
+  const [year,mon]=month.split('-').map(Number);
+  return new Intl.DateTimeFormat('de-CH',{month:'long',year:'numeric'}).format(new Date(year,mon-1,1));
+}
+function availableTrainingMonths(){
+  return [...new Set(
+    data.events.filter(e=>e.type==='training').map(e=>e.date.slice(0,7))
+  )].sort();
+}
+function setQuickMonth(month){quickMonth=month;renderQuickPlanner()}
+function toggleQuickAttendance(eventId,playerId){
+  data.attendance[eventId] ||= {};
+  const current=data.attendance[eventId][playerId]||'present';
+  data.attendance[eventId][playerId]=current==='absent'?'present':'absent';
+  if(data.attendance[eventId][playerId]!=='present'&&data.lineups?.[eventId]){
+    clearPlayerFromLineup(eventId,playerId);
+  }
+  save();
+}
+function renderQuickPlanner(){
+  const el=document.getElementById('quickPlanner');
+  if(!el)return;
+  if(currentType!=='training'){el.innerHTML='';return}
+
+  const months=availableTrainingMonths();
+  if(!months.length){
+    el.innerHTML='<div class="empty">Erstelle zuerst die Saisontrainings.</div>';
+    return;
+  }
+  if(!months.includes(quickMonth))quickMonth=months[0];
+
+  const trainings=data.events
+    .filter(e=>e.type==='training'&&e.date.startsWith(quickMonth))
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+
+  let html=`<h2>Schnellplanung</h2>
+  <div class="quick-toolbar">
+    <select onchange="setQuickMonth(this.value)">
+      ${months.map(m=>`<option value="${m}" ${m===quickMonth?'selected':''}>${monthLabel(m)}</option>`).join('')}
+    </select>
+    <span class="quick-legend">Klick auf eine Zelle: grün = dabei, rot = abgemeldet</span>
+  </div>
+  <div class="quick-table-wrap"><table class="quick-table"><thead><tr><th>Spieler</th>`;
+
+  for(const t of trainings){
+    const d=new Date(t.date+'T12:00:00');
+    html+=`<th>${String(d.getDate()).padStart(2,'0')}.<br><span class="muted">${d.toLocaleDateString('de-CH',{weekday:'short'})}</span></th>`;
+  }
+  html+='</tr></thead><tbody>';
+
+  for(const p of data.players){
+    html+=`<tr><td><strong>${p.name}</strong><br><span class="muted">${p.position||p.role}${p.jerseyNumber?' · #'+p.jerseyNumber:''}</span></td>`;
+    for(const t of trainings){
+      const status=(data.attendance[t.id]||{})[p.id]||'present';
+      const cls=status==='absent'?'absent':status==='open'?'open':'present';
+      const symbol=status==='absent'?'✕':status==='open'?'?':'✓';
+      html+=`<td><button class="quick-cell ${cls}" onclick="toggleQuickAttendance('${t.id}','${p.id}')">${symbol}</button></td>`;
+    }
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+  el.innerHTML=html;
+}
+
+function downloadMonthlyTrainingPdf(){
+  const trainings=data.events.filter(e=>e.type==='training').sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(!trainings.length)return alert('Noch keine Trainings vorhanden.');
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const months=[...new Set(trainings.map(t=>t.date.slice(0,7)))].sort();
+
+  months.forEach((month,index)=>{
+    if(index>0)doc.addPage('a4','landscape');
+    const monthTrainings=trainings.filter(t=>t.date.startsWith(month));
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(17);
+    doc.text(`SC Altstadt – Trainingsübersicht ${monthLabel(month)}`,14,15);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9);
+    doc.text('✓ = dabei   X = abgemeldet   ? = offen',14,21);
+
+    const head=['Spieler',...monthTrainings.map(t=>{
+      const d=new Date(t.date+'T12:00:00');
+      return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+    })];
+
+    const body=data.players.map(p=>[
+      `${p.jerseyNumber?'#'+p.jerseyNumber+' ':''}${p.name}`,
+      ...monthTrainings.map(t=>{
+        const status=(data.attendance[t.id]||{})[p.id]||'present';
+        return status==='absent'?'X':status==='open'?'?':'✓';
+      })
+    ]);
+
+    doc.autoTable({
+      startY:26,
+      head:[head],
+      body,
+      margin:{left:10,right:10,bottom:10},
+      styles:{fontSize:7,cellPadding:1.5,halign:'center',valign:'middle'},
+      columnStyles:{0:{halign:'left',cellWidth:48}},
+      headStyles:{fillColor:[16,36,63],fontSize:7},
+      alternateRowStyles:{fillColor:[246,249,252]},
+      theme:'grid',
+      didParseCell:function(dataCell){
+        if(dataCell.section==='body'&&dataCell.column.index>0){
+          const value=dataCell.cell.raw;
+          if(value==='X')dataCell.cell.styles.textColor=[196,61,61];
+          if(value==='✓')dataCell.cell.styles.textColor=[24,134,75];
+        }
+      }
+    });
+  });
+
+  doc.save('Trainingsuebersicht_Monate.pdf');
+}
+
 function exportCSV(){
  const rows=[['Spieler','Trikotnummer','Geburtstag','Position','Schusshand','Dabei','Nicht dabei','Quote %']];
  for(const p of data.players){
@@ -819,7 +1129,7 @@ async function initCloud(){
   });
 }
 
-function renderAll(){renderEvents();renderSelected();renderPlayers();renderStats()}
+function renderAll(){renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
 renderAll();
 initCloud();
 </script>
