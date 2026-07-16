@@ -932,7 +932,10 @@ function renderQuickPlanner(){
 }
 
 function downloadMonthlyTrainingPdf(){
-  const trainings=data.events.filter(e=>e.type==='training').sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const trainings=data.events
+    .filter(e=>e.type==='training')
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+
   if(!trainings.length)return alert('Noch keine Trainings vorhanden.');
 
   const {jsPDF}=window.jspdf;
@@ -941,13 +944,16 @@ function downloadMonthlyTrainingPdf(){
 
   months.forEach((month,index)=>{
     if(index>0)doc.addPage('a4','landscape');
+
     const monthTrainings=trainings.filter(t=>t.date.startsWith(month));
+
     doc.setFont('helvetica','bold');
     doc.setFontSize(17);
     doc.text(`SC Altstadt – Trainingsübersicht ${monthLabel(month)}`,14,15);
+
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
-    doc.text('✓ = dabei   X = abgemeldet   ? = offen',14,21);
+    doc.text('JA = dabei   NEIN = abgemeldet   OFFEN = noch nicht entschieden',14,21);
 
     const head=['Spieler',...monthTrainings.map(t=>{
       const d=new Date(t.date+'T12:00:00');
@@ -958,7 +964,7 @@ function downloadMonthlyTrainingPdf(){
       `${p.jerseyNumber?'#'+p.jerseyNumber+' ':''}${p.name}`,
       ...monthTrainings.map(t=>{
         const status=(data.attendance[t.id]||{})[p.id]||'present';
-        return status==='absent'?'X':status==='open'?'?':'✓';
+        return status==='absent'?'NEIN':status==='open'?'OFFEN':'JA';
       })
     ]);
 
@@ -967,18 +973,79 @@ function downloadMonthlyTrainingPdf(){
       head:[head],
       body,
       margin:{left:10,right:10,bottom:10},
-      styles:{fontSize:7,cellPadding:1.5,halign:'center',valign:'middle'},
-      columnStyles:{0:{halign:'left',cellWidth:48}},
-      headStyles:{fillColor:[16,36,63],fontSize:7},
-      alternateRowStyles:{fillColor:[246,249,252]},
+      styles:{
+        fontSize:6.8,
+        cellPadding:1.4,
+        halign:'center',
+        valign:'middle'
+      },
+      columnStyles:{
+        0:{halign:'left',cellWidth:48}
+      },
+      headStyles:{
+        fillColor:[16,36,63],
+        fontSize:7
+      },
+      alternateRowStyles:{
+        fillColor:[246,249,252]
+      },
       theme:'grid',
-      didParseCell:function(dataCell){
-        if(dataCell.section==='body'&&dataCell.column.index>0){
-          const value=dataCell.cell.raw;
-          if(value==='X')dataCell.cell.styles.textColor=[196,61,61];
-          if(value==='✓')dataCell.cell.styles.textColor=[24,134,75];
+      didParseCell:function(cellData){
+        if(cellData.section==='body'&&cellData.column.index>0){
+          const value=cellData.cell.raw;
+          if(value==='NEIN')cellData.cell.styles.textColor=[196,61,61];
+          if(value==='JA')cellData.cell.styles.textColor=[24,134,75];
+          if(value==='OFFEN')cellData.cell.styles.textColor=[183,121,31];
         }
       }
+    });
+
+    let y=doc.lastAutoTable.finalY+7;
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.text('Anwesende Spieler pro Training',10,y);
+    y+=4;
+
+    const summaryHead=['Position',...monthTrainings.map(t=>{
+      const d=new Date(t.date+'T12:00:00');
+      return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+    })];
+
+    function presentPlayers(t){
+      const record=data.attendance[t.id]||{};
+      return data.players.filter(p=>(record[p.id]||'present')==='present');
+    }
+
+    const summaryBody=[
+      ['Stürmer',...monthTrainings.map(t=>presentPlayers(t).filter(p=>p.position==='Stürmer').length)],
+      ['Verteidiger',...monthTrainings.map(t=>presentPlayers(t).filter(p=>p.position==='Verteidiger').length)],
+      ['Goalies',...monthTrainings.map(t=>presentPlayers(t).filter(p=>p.position==='Goalie').length)],
+      ['Gesamt',...monthTrainings.map(t=>presentPlayers(t).length)]
+    ];
+
+    doc.autoTable({
+      startY:y,
+      head:[summaryHead],
+      body:summaryBody,
+      margin:{left:10,right:10,bottom:8},
+      styles:{
+        fontSize:7.2,
+        cellPadding:1.6,
+        halign:'center',
+        valign:'middle'
+      },
+      columnStyles:{
+        0:{halign:'left',cellWidth:48,fontStyle:'bold'}
+      },
+      headStyles:{
+        fillColor:[31,95,153],
+        fontSize:7
+      },
+      bodyStyles:{
+        textColor:[20,32,51]
+      },
+      theme:'grid'
     });
   });
 
