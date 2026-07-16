@@ -128,6 +128,18 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
   .attendance-scroll{max-height:52vh}
 }
 
+
+.team-screen{position:fixed;inset:0;z-index:90;background:linear-gradient(135deg,#0c1f35,#1f5f99);display:grid;place-items:center;padding:20px}
+.team-screen.hidden{display:none}
+.team-card{width:min(560px,100%);background:#fff;border-radius:20px;padding:24px;box-shadow:0 20px 60px #0005}
+.team-card h2{margin:0 0 6px}.team-card p{margin:0 0 18px;color:var(--muted)}
+.team-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.team-option{border:1px solid var(--line);border-radius:16px;padding:20px;background:#f8fbfd;color:var(--ink);text-align:left;cursor:pointer}
+.team-option strong{display:block;font-size:18px;margin-bottom:5px}.team-option span{font-size:13px;color:var(--muted)}
+.team-option:hover{border-color:var(--blue);background:#eef6fd}
+.team-switch-btn{border:1px solid #ffffff55;background:#ffffff15;color:white;border-radius:9px;padding:7px 9px;cursor:pointer;font-size:12px}
+@media(max-width:600px){.team-options{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -151,14 +163,30 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
     <div id="authMessage" class="auth-message"></div>
   </div>
 </div>
+<div id="teamScreen" class="team-screen hidden">
+  <div class="team-card">
+    <h2>Mannschaft auswählen</h2>
+    <p>Welche Mannschaft möchtest du planen?</p>
+    <div class="team-options">
+      <button class="team-option" onclick="selectTeam('third')">
+        <strong>🏒 SC Altstadt 3. Liga</strong>
+        <span>Bestehende Mannschaft und bisherige Daten</span>
+      </button>
+      <button class="team-option" onclick="selectTeam('second')">
+        <strong>🥅 SC Altstadt 2. Liga</strong>
+        <span>Eigener Kader und eigene Planung</span>
+      </button>
+    </div>
+  </div>
+</div>
 <header>
   <div>
     <h1>🏒 Hockey Team – Coach</h1>
-    <div class="sub">Trainings, Spiele, Trainingslager und Anwesenheit</div>
+    <div class="sub" id="activeTeamLabel">Trainings, Spiele, Trainingslager und Anwesenheit</div>
   </div>
   <div class="cloud-bar">
     <span id="cloudStatus" class="cloud-status">Nicht verbunden</span>
-    <button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
+    <button id="teamSwitchBtn" class="team-switch-btn" onclick="showTeamSelection()" style="display:none">Mannschaft wechseln</button><button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
   </div>
 </header>
 <main>
@@ -232,24 +260,37 @@ const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
 const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const DEFAULT_PLAYERS=[{"name": "Noah Bürgi", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Philipp Holliger", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Benjamin Ansbach", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Samuel Wyss", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Michael Kiefer", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Noël Bauer", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Dario Neira", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Dominik Ramel", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Levin Hug", "role": "Feldspieler", "position": "Verteidiger", "shot": "Rechts"}, {"name": "Jannick Gasche", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Lukas Walser", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Colin Trotter", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}, {"name": "Julian Gysin", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Silvano Renggli", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Stefano Peloso", "role": "Feldspieler", "position": "Verteidiger", "shot": "Rechts"}, {"name": "Gianluca Bruno", "role": "Feldspieler", "position": "Stürmer", "shot": "Links"}, {"name": "Pascal Sahli", "role": "Feldspieler", "position": "Verteidiger", "shot": "Links"}, {"name": "Marc Sahli", "role": "Feldspieler", "position": "Stürmer", "shot": "Rechts"}];
-let data=JSON.parse(localStorage.getItem('hockeyCoachData_v13')||'null')||{
+const EMPTY_TEAM_DATA=()=>({
  players:DEFAULT_PLAYERS.map((p,i)=>({id:'p'+(i+1),...p})),
  events:[],
  attendance:{},
- lineups:{}
-};
-data.lineups ||= {};
-for(const p of data.players){ if(!('jerseyNumber' in p)) p.jerseyNumber=''; if(!('birthday' in p)) p.birthday=''; }
-
-data.boards ||= {};
-for(const e of data.events){
-  if(e.type==='training'){
-    data.attendance[e.id] ||= {};
-    for(const p of data.players){
-      if(!(p.id in data.attendance[e.id])) data.attendance[e.id][p.id]='present';
+ lineups:{},
+ boards:{}
+});
+function normalizeTeamData(teamData){
+  const normalized=teamData||EMPTY_TEAM_DATA();
+  normalized.players ||= [];
+  normalized.events ||= [];
+  normalized.attendance ||= {};
+  normalized.lineups ||= {};
+  normalized.boards ||= {};
+  for(const p of normalized.players){
+    if(!('jerseyNumber' in p))p.jerseyNumber='';
+    if(!('birthday' in p))p.birthday='';
+  }
+  for(const e of normalized.events){
+    if(e.type==='training'){
+      normalized.attendance[e.id] ||= {};
+      for(const p of normalized.players){
+        if(!(p.id in normalized.attendance[e.id]))normalized.attendance[e.id][p.id]='present';
+      }
     }
   }
+  return normalized;
 }
+let data=normalizeTeamData(JSON.parse(localStorage.getItem('hockeyCoachData_v13')||'null')||EMPTY_TEAM_DATA());
+let cloudRoot={teams:{third:data,second:EMPTY_TEAM_DATA()}};
+let activeTeamKey=null;
 
 let currentType='training',selectedId=null;
 let cloudUser=null;
@@ -263,8 +304,30 @@ const labels={
  game:{plural:'Spiele',single:'Spiel',icon:'🥅'},
  camp:{plural:'Trainingslager',single:'Trainingslager',icon:'🏕️'}
 };
+const TEAM_NAMES={third:'SC Altstadt 3. Liga',second:'SC Altstadt 2. Liga'};
+function showTeamSelection(){
+  if(cloudUser)document.getElementById('teamScreen').classList.remove('hidden');
+}
+function selectTeam(teamKey){
+  activeTeamKey=teamKey;
+  cloudRoot.teams ||= {};
+  cloudRoot.teams[teamKey]=normalizeTeamData(cloudRoot.teams[teamKey]||EMPTY_TEAM_DATA());
+  data=cloudRoot.teams[teamKey];
+  localStorage.setItem('hockeyCoachActiveTeam',teamKey);
+  localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
+  document.getElementById('teamScreen').classList.add('hidden');
+  document.getElementById('activeTeamLabel').textContent=TEAM_NAMES[teamKey];
+  document.getElementById('teamSwitchBtn').style.display='inline-block';
+  selectedId=null;
+  renderAll();
+}
+
 
 function save(){
+  if(activeTeamKey){
+    cloudRoot.teams ||= {};
+    cloudRoot.teams[activeTeamKey]=data;
+  }
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
   renderAll();
   scheduleCloudSave();
@@ -1191,7 +1254,8 @@ async function pushCloudState(){
   if(!cloudReady||!cloudUser||cloudSaving)return;
   cloudSaving=true;
   const now=new Date().toISOString();
-  const payload={user_id:cloudUser.id,data:data,updated_at:now};
+  if(activeTeamKey)cloudRoot.teams[activeTeamKey]=data;
+  const payload={user_id:cloudUser.id,data:cloudRoot,updated_at:now};
   const {error}=await cloudClient.from('app_state').upsert(payload,{onConflict:'user_id'});
   cloudSaving=false;
   if(error){
@@ -1213,22 +1277,24 @@ async function loadCloudState({initial=false}={}){
   }
   if(row?.data){
     if(initial||(!cloudSaving&&row.updated_at&&row.updated_at!==lastCloudUpdated)){
-      data=row.data;
-      data.players ||= [];
-      data.events ||= [];
-      data.attendance ||= {};
-      data.lineups ||= {};
-      data.boards ||= {};
-      for(const p of data.players){
-        if(!('jerseyNumber' in p))p.jerseyNumber='';
-        if(!('birthday' in p))p.birthday='';
+      if(row.data.teams){
+        cloudRoot=row.data;
+      }else{
+        cloudRoot={teams:{third:normalizeTeamData(row.data),second:EMPTY_TEAM_DATA()}};
       }
-      localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
+      cloudRoot.teams ||= {};
+      cloudRoot.teams.third=normalizeTeamData(cloudRoot.teams.third||EMPTY_TEAM_DATA());
+      cloudRoot.teams.second=normalizeTeamData(cloudRoot.teams.second||EMPTY_TEAM_DATA());
       lastCloudUpdated=row.updated_at||'';
-      renderAll();
+      if(activeTeamKey){
+        data=cloudRoot.teams[activeTeamKey];
+        localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
+        renderAll();
+      }
     }
     setCloudStatus('Synchronisiert','ok');
   }else{
+    cloudRoot={teams:{third:normalizeTeamData(data),second:EMPTY_TEAM_DATA()}};
     await pushCloudState();
   }
 }
@@ -1249,6 +1315,9 @@ async function handleCloudSession(session){
     logoutBtn.style.display='none';
     setCloudStatus('Nicht angemeldet');
     clearInterval(cloudPollTimer);
+    activeTeamKey=null;
+    document.getElementById('teamScreen').classList.add('hidden');
+    document.getElementById('teamSwitchBtn').style.display='none';
     return;
   }
   authScreen.classList.add('hidden');
@@ -1258,6 +1327,9 @@ async function handleCloudSession(session){
   cloudReady=true;
   setCloudStatus('Synchronisiert','ok');
   startCloudPolling();
+  const remembered=localStorage.getItem('hockeyCoachActiveTeam');
+  if(remembered&&cloudRoot.teams?.[remembered])selectTeam(remembered);
+  else document.getElementById('teamScreen').classList.remove('hidden');
 }
 async function initCloud(){
   const {data:{session}}=await cloudClient.auth.getSession();
@@ -1269,7 +1341,7 @@ async function initCloud(){
   });
 }
 
-function renderAll(){renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
+function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
 renderAll();
 initCloud();
 </script>
