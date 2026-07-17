@@ -210,7 +210,7 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
   </div>
   <div class="cloud-bar">
     <span id="cloudStatus" class="cloud-status">Nicht verbunden</span>
-    <button id="settingsBtn" class="settings-btn" onclick="openTeamSettings()" style="display:none">Einstellungen</button><button id="teamSwitchBtn" class="team-switch-btn" onclick="showTeamSelection()" style="display:none">Mannschaft wechseln</button><button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
+    <button id="settingsBtn" class="settings-btn" onclick="showSettingsPanel()" style="display:none">Einstellungen</button><button id="teamSwitchBtn" class="team-switch-btn" onclick="showTeamSelection()" style="display:none">Mannschaft wechseln</button><button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
   </div>
 </header>
 <main>
@@ -281,6 +281,36 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
   <div class="modal-card">
     <button class="modal-close" onclick="closeModal()">×</button>
     <div id="modalContent"></div>
+  </div>
+</div>
+
+
+<div id="settingsPanel" class="modal hidden" onclick="closeSettingsOnBackdrop(event)">
+  <div class="modal-card">
+    <button class="modal-close" type="button" onclick="hideSettingsPanel()">×</button>
+    <h2>Mannschaftseinstellungen</h2>
+    <div class="stack team-settings">
+      <div class="field">
+        <label>Mannschaftsname</label>
+        <input id="settingsTeamName" type="text">
+      </div>
+      <div class="field">
+        <label>Coach</label>
+        <input id="settingsCoachName" type="text">
+      </div>
+      <div class="logo-upload-row">
+        <img id="settingsLogoPreview" class="logo-preview" alt="Logo-Vorschau">
+        <div class="field">
+          <label>Logo hochladen</label>
+          <input id="settingsLogoFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+          <span class="muted">PNG, JPG, WebP oder SVG; maximal 1 MB.</span>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary" type="button" onclick="saveSettingsPanel()">Speichern</button>
+        <button class="btn danger" type="button" onclick="removeSettingsLogo()">Logo entfernen</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -417,6 +447,78 @@ function closeModal(){
 }
 function closeModalOnBackdrop(event){
   if(event.target?.id==='appModal')closeModal();
+}
+
+
+function showSettingsPanel(){
+  if(!activeTeamKey){
+    alert('Bitte zuerst eine Mannschaft auswählen.');
+    return;
+  }
+  data.settings ||= {logo:'',teamName:'',coachName:''};
+  const panel=document.getElementById('settingsPanel');
+  const nameInput=document.getElementById('settingsTeamName');
+  const coachInput=document.getElementById('settingsCoachName');
+  const preview=document.getElementById('settingsLogoPreview');
+  const fileInput=document.getElementById('settingsLogoFile');
+
+  nameInput.value=data.settings.teamName||TEAM_NAMES[activeTeamKey];
+  coachInput.value=data.settings.coachName||TEAM_COACHES[activeTeamKey];
+  preview.src=data.settings.logo||defaultLogoData(activeTeamKey==='second'?'2':'3');
+  fileInput.value='';
+
+  fileInput.onchange=function(){
+    const file=this.files?.[0];
+    if(!file)return;
+    if(file.size>1024*1024){
+      alert('Das Logo darf maximal 1 MB gross sein.');
+      this.value='';
+      return;
+    }
+    const reader=new FileReader();
+    reader.onload=()=>{preview.src=reader.result;};
+    reader.readAsDataURL(file);
+  };
+
+  panel.classList.remove('hidden');
+}
+function hideSettingsPanel(){
+  document.getElementById('settingsPanel')?.classList.add('hidden');
+}
+function closeSettingsOnBackdrop(event){
+  if(event.target?.id==='settingsPanel')hideSettingsPanel();
+}
+function saveSettingsPanel(){
+  if(!activeTeamKey)return;
+  const name=document.getElementById('settingsTeamName').value.trim();
+  const coach=document.getElementById('settingsCoachName').value.trim();
+  const preview=document.getElementById('settingsLogoPreview');
+
+  data.settings ||= {logo:'',teamName:'',coachName:''};
+  data.settings.teamName=name||TEAM_NAMES[activeTeamKey];
+  data.settings.coachName=coach||TEAM_COACHES[activeTeamKey];
+
+  if(preview?.src?.startsWith('data:')){
+    data.settings.logo=preview.src;
+  }
+
+  TEAM_NAMES[activeTeamKey]=data.settings.teamName;
+  TEAM_COACHES[activeTeamKey]=data.settings.coachName;
+  document.getElementById('activeTeamLabel').textContent=
+    `${TEAM_NAMES[activeTeamKey]} · Coach ${TEAM_COACHES[activeTeamKey]}`;
+
+  refreshTeamLogos();
+  hideSettingsPanel();
+  save();
+}
+function removeSettingsLogo(){
+  if(!activeTeamKey)return;
+  data.settings ||= {logo:'',teamName:'',coachName:''};
+  data.settings.logo='';
+  document.getElementById('settingsLogoPreview').src=
+    defaultLogoData(activeTeamKey==='second'?'2':'3');
+  refreshTeamLogos();
+  save();
 }
 
 function openTeamSettings(){
