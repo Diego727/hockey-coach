@@ -213,8 +213,8 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 </div>
 <div class="row" style="margin-top:8px">
 <button id="scheduleBtn" class="btn soft" onclick="generateSeasonTrainings()">Saisontrainings 13.08.2026–31.03.2027 erstellen</button>
-<button class="btn primary" onclick="downloadCategoryReport()">PDF herunterladen</button><button class="btn soft" onclick="downloadMonthlyTrainingPdf()">Monats-PDF</button>
-<button class="btn ghost" onclick="downloadAllReport()">Gesamt-PDF</button>
+<button class="btn primary" onclick="downloadCategoryReport()">Saisonübersicht</button><button class="btn soft" onclick="downloadMonthlyTrainingPdf()">Monatsübersicht</button>
+
 </div>
 <p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p><div id="eventList"></div><div id="quickPlanner" class="quick-planner"></div>
 </div>
@@ -486,7 +486,7 @@ function renderSelected(){
     <div class="attendance-actions">
       <button class="btn soft" onclick="setAllAttendance('${e.id}','present')">Alle dabei</button>
       <button class="btn ghost" onclick="setAllAttendance('${e.id}','open')">Alle offen</button>
-      <button class="btn soft" onclick="downloadEventReport('${e.id}')">PDF dieses Termins</button>
+      <button class="btn soft" onclick="downloadEventReport('${e.id}')">${e.type==='training'?'Trainingsrapport':e.type==='game'?'Spielrapport':'Lager-Rapport'} herunterladen</button>
     </div>
   </div>
   <div id="attendanceList" class="attendance-scroll"></div>
