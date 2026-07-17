@@ -172,6 +172,65 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
   .weekday-grid{grid-template-columns:repeat(4,1fr)}
 }
 
+
+.selected-card{
+  align-self:start;
+  position:sticky;
+  top:88px;
+  max-height:calc(100vh - 104px);
+  overflow:hidden;
+}
+.selected-card > #selectedBody{
+  max-height:calc(100vh - 155px);
+  overflow:auto;
+  padding-right:4px;
+}
+.attendance-quick{
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#fff;
+  margin-top:12px;
+}
+.attendance-quick-head{
+  position:sticky;
+  top:0;
+  z-index:4;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:10px 12px;
+  border-radius:14px 14px 0 0;
+}
+.attendance-quick-list{
+  max-height:46vh;
+  overflow:auto;
+  padding:0 12px;
+}
+.player-search{
+  width:100%;
+  margin-top:8px;
+}
+.training-selected-flash{
+  animation:selectedFlash .55s ease;
+}
+@keyframes selectedFlash{
+  0%{box-shadow:0 0 0 0 rgba(31,95,153,.35)}
+  100%{box-shadow:0 0 0 12px rgba(31,95,153,0)}
+}
+@media(max-width:800px){
+  .selected-card{
+    position:static;
+    max-height:none;
+    overflow:visible;
+  }
+  .selected-card > #selectedBody{
+    max-height:none;
+    overflow:visible;
+  }
+  .attendance-quick-list{
+    max-height:55vh;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -758,7 +817,26 @@ function generateSeasonTrainings(){
    : 'Alle Saisontrainings sind bereits vorhanden.'
  );
 }
-function selectEvent(id){selectedId=id;renderAll()}
+function selectEvent(id){
+  selectedId=id;
+  renderAll();
+
+  requestAnimationFrame(()=>{
+    const card=document.getElementById('selectedCard');
+    if(!card)return;
+
+    card.classList.remove('training-selected-flash');
+    void card.offsetWidth;
+    card.classList.add('training-selected-flash');
+
+    if(window.matchMedia('(max-width: 800px)').matches){
+      card.scrollIntoView({behavior:'smooth',block:'start'});
+    }else{
+      const search=document.getElementById('attendanceSearch');
+      if(search)search.focus({preventScroll:true});
+    }
+  });
+}
 function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(selectedId===id)selectedId=null;save()}
 function setStatus(pid,status){
   if(!selectedId)return;
@@ -807,6 +885,13 @@ function changeBirthday(id,birthday){const p=data.players.find(x=>x.id===id);if(
 function fmtBirthday(s){if(!s)return '–';return new Intl.DateTimeFormat('de-CH',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 
 
+function filterAttendancePlayers(query){
+  const normalized=(query||'').trim().toLowerCase();
+  document.querySelectorAll('#attendanceList .player').forEach(row=>{
+    const text=(row.dataset.search||row.textContent||'').toLowerCase();
+    row.style.display=!normalized||text.includes(normalized)?'grid':'none';
+  });
+}
 function renderEvents(){
  listTitle.textContent=labels[currentType].plural;
  const list=eventList,sorted=data.events.filter(e=>e.type===currentType).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
@@ -827,26 +912,30 @@ function renderSelected(){
 </div>
 <p><strong>${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Goalies</strong></p>
 <p class="muted">${left} Linksschützen · ${right} Rechtsschützen</p>
-<div class="attendance-panel">
-  <div class="attendance-panel-head">
+
+<div class="attendance-quick">
+  <div class="attendance-quick-head">
     <strong>Spieler auswählen</strong>
-    <div class="muted">Direkt hier Abmeldungen anklicken – kein Scrollen durch Aufstellung oder Coachboard nötig.</div>
-    <div class="attendance-actions">
+    <div class="muted">Klicke direkt auf den Status eines Spielers.</div>
+    <input id="attendanceSearch" class="player-search" type="search" placeholder="Spieler suchen …" oninput="filterAttendancePlayers(this.value)">
+    <div class="row" style="margin-top:8px">
       <button class="btn soft" onclick="setAllAttendance('${e.id}','present')">Alle dabei</button>
       <button class="btn ghost" onclick="setAllAttendance('${e.id}','open')">Alle offen</button>
       <button class="btn soft" onclick="downloadEventReport('${e.id}')">${e.type==='training'?'Trainingsrapport':e.type==='game'?'Spielrapport':'Lager-Rapport'} herunterladen</button>
     </div>
   </div>
-  <div id="attendanceList" class="attendance-scroll"></div>
+  <div id="attendanceList" class="attendance-quick-list"></div>
 </div>
+
 <details class="collapse-section" open>
   <summary>Aufstellung – 4 Linien</summary>
   <div class="collapse-body">
-    <p class="muted">Im Drag-and-drop erscheinen nur Spieler, die für diesen Termin als „dabei“ markiert sind.</p>
+    <p class="muted">Es erscheinen nur Spieler, die für diesen Termin als „dabei“ markiert sind.</p>
     <div id="playerPool" class="player-pool"></div>
     <div id="lineupBoard" class="lineup-board" style="margin-top:10px"></div>
   </div>
 </details>
+
 <details class="collapse-section">
   <summary>Coachboard</summary>
   <div class="collapse-body">
@@ -868,7 +957,7 @@ function renderSelected(){
 </details>`;
  renderLineup(e.id);
  renderCoachboard(e.id);
- for(const p of data.players){const s=a[p.id]||'unknown',row=document.createElement('div');row.className='player';row.innerHTML=`<div><div class="name">${p.name}</div><div class="role">${p.position||p.role} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div><div class="status"><button class="${s==='present'?'on-present':''}" onclick="setStatus('${p.id}','present')">✓</button><button class="${s==='absent'?'on-absent':''}" onclick="setStatus('${p.id}','absent')">✕</button><button class="${s==='unknown'?'on-unknown':''}" onclick="setStatus('${p.id}','unknown')">?</button></div>`;attendanceList.appendChild(row)}
+ for(const p of data.players){const s=a[p.id]||'unknown',row=document.createElement('div');row.className='player';row.dataset.search=`${p.name} ${p.position||p.role} ${p.jerseyNumber||''}`;row.innerHTML=`<div><div class="name">${p.name}</div><div class="role">${p.position||p.role} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div><div class="status"><button class="${s==='present'?'on-present':''}" onclick="setStatus('${p.id}','present')">✓</button><button class="${s==='absent'?'on-absent':''}" onclick="setStatus('${p.id}','absent')">✕</button><button class="${s==='unknown'?'on-unknown':''}" onclick="setStatus('${p.id}','unknown')">?</button></div>`;attendanceList.appendChild(row)}
 }
 function renderPlayers(){
  playerAdminList.innerHTML='';
