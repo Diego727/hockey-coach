@@ -150,6 +150,15 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .logo-upload-row input[type=file]{max-width:260px}
 .settings-btn{border:1px solid #ffffff55;background:#ffffff15;color:white;border-radius:9px;padding:7px 9px;cursor:pointer;font-size:12px}
 
+
+.modal{position:fixed;inset:0;z-index:120;background:rgba(8,20,34,.72);display:grid;place-items:center;padding:18px}
+.modal.hidden{display:none}
+.modal-card{position:relative;width:min(620px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:18px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.modal-close{position:absolute;right:12px;top:10px;width:34px;height:34px;border:0;border-radius:50%;background:#eef2f6;color:#223247;font-size:21px;cursor:pointer}
+.stack{display:grid;gap:12px}
+.field{display:grid;gap:5px}
+.field label{font-size:12px;font-weight:700;color:var(--muted)}
+
 </style>
 </head>
 <body>
@@ -266,6 +275,14 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 </div>
 </section>
 </main>
+
+
+<div id="appModal" class="modal hidden" onclick="closeModalOnBackdrop(event)">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
@@ -386,6 +403,22 @@ function defaultLogoData(label){
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" rx="22" fill="#10243f"/><text x="60" y="50" text-anchor="middle" font-size="36">🏒</text><text x="60" y="88" text-anchor="middle" font-family="Arial" font-size="28" fill="white">${label}</text></svg>`;
   return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
 }
+
+function openModal(content){
+  const modal=document.getElementById('appModal');
+  const target=document.getElementById('modalContent');
+  if(!modal||!target)return;
+  target.innerHTML=content;
+  modal.classList.remove('hidden');
+}
+function closeModal(){
+  const modal=document.getElementById('appModal');
+  if(modal)modal.classList.add('hidden');
+}
+function closeModalOnBackdrop(event){
+  if(event.target?.id==='appModal')closeModal();
+}
+
 function openTeamSettings(){
   if(!activeTeamKey)return;
   data.settings ||= {logo:'',teamName:'',coachName:''};
