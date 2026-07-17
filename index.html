@@ -140,6 +140,16 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .team-switch-btn{border:1px solid #ffffff55;background:#ffffff15;color:white;border-radius:9px;padding:7px 9px;cursor:pointer;font-size:12px}
 @media(max-width:600px){.team-options{grid-template-columns:1fr}}
 
+
+.team-option-logo{width:72px;height:72px;object-fit:contain;border-radius:14px;background:#fff;border:1px solid var(--line);padding:6px;margin-bottom:10px}
+.header-team-logo{width:42px;height:42px;object-fit:contain;border-radius:10px;background:#fff;padding:4px;border:1px solid #ffffff44}
+.header-brand{display:flex;align-items:center;gap:10px}
+.team-settings{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.logo-preview{width:90px;height:90px;object-fit:contain;border:1px solid var(--line);border-radius:14px;background:#fff;padding:6px}
+.logo-upload-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo-upload-row input[type=file]{max-width:260px}
+.settings-btn{border:1px solid #ffffff55;background:#ffffff15;color:white;border-radius:9px;padding:7px 9px;cursor:pointer;font-size:12px}
+
 </style>
 </head>
 <body>
@@ -169,24 +179,29 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
     <p>Welche Mannschaft möchtest du planen?</p>
     <div class="team-options">
       <button class="team-option" onclick="selectTeam('second')">
+        <img id="teamLogoSecond" class="team-option-logo" alt="Logo 2. Liga">
         <strong>🏒 SC Altstadt 2. Liga</strong>
-        <span>Coach: Diego Schwarzenbach · bestehende Daten</span>
+        <span>Coach: Diego Schwarzenbach</span>
       </button>
       <button class="team-option" onclick="selectTeam('third')">
+        <img id="teamLogoThird" class="team-option-logo" alt="Logo 3. Liga">
         <strong>🥅 SC Altstadt 3. Liga</strong>
-        <span>Coach: Sandro Zorzin · noch nicht eingerichtet</span>
+        <span>Coach: Sandro Zorzin</span>
       </button>
     </div>
   </div>
 </div>
 <header>
-  <div>
-    <h1>🏒 Hockey Team – Coach</h1>
-    <div class="sub" id="activeTeamLabel">Trainings, Spiele, Trainingslager und Anwesenheit</div>
+  <div class="header-brand">
+    <img id="headerTeamLogo" class="header-team-logo" alt="Teamlogo">
+    <div>
+      <h1>🏒 Hockey Team – Coach</h1>
+      <div class="sub" id="activeTeamLabel">Trainings, Spiele, Trainingslager und Anwesenheit</div>
+    </div>
   </div>
   <div class="cloud-bar">
     <span id="cloudStatus" class="cloud-status">Nicht verbunden</span>
-    <button id="teamSwitchBtn" class="team-switch-btn" onclick="showTeamSelection()" style="display:none">Mannschaft wechseln</button><button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
+    <button id="settingsBtn" class="settings-btn" onclick="openTeamSettings()" style="display:none">Einstellungen</button><button id="teamSwitchBtn" class="team-switch-btn" onclick="showTeamSelection()" style="display:none">Mannschaft wechseln</button><button id="logoutBtn" class="logout-btn" onclick="cloudSignOut()" style="display:none">Abmelden</button>
   </div>
 </header>
 <main>
@@ -266,7 +281,8 @@ const EMPTY_TEAM_DATA=()=>({
  events:[],
  attendance:{},
  lineups:{},
- boards:{}
+ boards:{},
+ settings:{logo:'',teamName:'',coachName:''}
 });
 function normalizeTeamData(teamData){
   const normalized=teamData||EMPTY_TEAM_DATA();
@@ -275,6 +291,7 @@ function normalizeTeamData(teamData){
   normalized.attendance ||= {};
   normalized.lineups ||= {};
   normalized.boards ||= {};
+  normalized.settings ||= {logo:'',teamName:'',coachName:''};
   for(const p of normalized.players){
     if(!('jerseyNumber' in p))p.jerseyNumber='';
     if(!('birthday' in p))p.birthday='';
@@ -290,7 +307,7 @@ function normalizeTeamData(teamData){
   return normalized;
 }
 let data=normalizeTeamData(JSON.parse(localStorage.getItem('hockeyCoachData_v13')||'null')||EMPTY_TEAM_DATA());
-let cloudRoot={teams:{second:data,third:{players:[],events:[],attendance:{},lineups:{},boards:{}}}};
+let cloudRoot={teams:{second:data,third:{players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}}}};
 let activeTeamKey=null;
 
 let currentType='training',selectedId=null;
@@ -314,7 +331,10 @@ const TEAM_COACHES={
   third:'Sandro Zorzin'
 };
 function showTeamSelection(){
-  if(cloudUser)document.getElementById('teamScreen').classList.remove('hidden');
+  if(cloudUser){
+    refreshTeamLogos();
+    document.getElementById('teamScreen').classList.remove('hidden');
+  }
 }
 function selectTeam(teamKey){
   activeTeamKey=teamKey;
@@ -322,7 +342,7 @@ function selectTeam(teamKey){
 
   if(!cloudRoot.teams[teamKey]){
     cloudRoot.teams[teamKey]=teamKey==='third'
-      ? {players:[],events:[],attendance:{},lineups:{},boards:{}}
+      ? {players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}}
       : EMPTY_TEAM_DATA();
   }
 
@@ -335,6 +355,7 @@ function selectTeam(teamKey){
     third.attendance ||= {};
     third.lineups ||= {};
     third.boards ||= {};
+    third.settings ||= {logo:'',teamName:'',coachName:''};
   }
 
   data=cloudRoot.teams[teamKey];
@@ -343,8 +364,78 @@ function selectTeam(teamKey){
   document.getElementById('teamScreen').classList.add('hidden');
   document.getElementById('activeTeamLabel').textContent=`${TEAM_NAMES[teamKey]} · Coach ${TEAM_COACHES[teamKey]}`;
   document.getElementById('teamSwitchBtn').style.display='inline-block';
+  document.getElementById('settingsBtn').style.display='inline-block';
   selectedId=null;
+  refreshTeamLogos();
   renderAll();
+}
+
+function refreshTeamLogos(){
+  const secondLogo=cloudRoot.teams?.second?.settings?.logo||'';
+  const thirdLogo=cloudRoot.teams?.third?.settings?.logo||'';
+  const s=document.getElementById('teamLogoSecond');
+  const t=document.getElementById('teamLogoThird');
+  if(s){s.src=secondLogo||defaultLogoData('2');s.style.display='block';}
+  if(t){t.src=thirdLogo||defaultLogoData('3');t.style.display='block';}
+  if(activeTeamKey){
+    const h=document.getElementById('headerTeamLogo');
+    if(h){h.src=data.settings?.logo||defaultLogoData(activeTeamKey==='second'?'2':'3');}
+  }
+}
+function defaultLogoData(label){
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" rx="22" fill="#10243f"/><text x="60" y="50" text-anchor="middle" font-size="36">🏒</text><text x="60" y="88" text-anchor="middle" font-family="Arial" font-size="28" fill="white">${label}</text></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+}
+function openTeamSettings(){
+  if(!activeTeamKey)return;
+  data.settings ||= {logo:'',teamName:'',coachName:''};
+  const teamName=data.settings.teamName||TEAM_NAMES[activeTeamKey];
+  const coachName=data.settings.coachName||TEAM_COACHES[activeTeamKey];
+  openModal(`<h2>Mannschaftseinstellungen</h2>
+    <div class="stack team-settings">
+      <div class="field"><label>Mannschaftsname</label><input id="settingsTeamName" value="${teamName}"></div>
+      <div class="field"><label>Coach</label><input id="settingsCoachName" value="${coachName}"></div>
+      <div class="logo-upload-row">
+        <img id="settingsLogoPreview" class="logo-preview" src="${data.settings.logo||defaultLogoData(activeTeamKey==='second'?'2':'3')}">
+        <div class="field">
+          <label>Logo hochladen</label>
+          <input id="settingsLogoFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onchange="previewTeamLogo(this)">
+          <span class="muted">Empfohlen: quadratisch, PNG oder JPG, maximal 1 MB.</span>
+        </div>
+      </div>
+      <button class="btn primary" onclick="saveTeamSettings()">Speichern</button>
+      <button class="btn danger" onclick="removeTeamLogo()">Logo entfernen</button>
+    </div>`);
+}
+function previewTeamLogo(input){
+  const file=input.files?.[0];
+  if(!file)return;
+  if(file.size>1024*1024){alert('Das Logo darf maximal 1 MB gross sein.');input.value='';return;}
+  const reader=new FileReader();
+  reader.onload=()=>{document.getElementById('settingsLogoPreview').src=reader.result;};
+  reader.readAsDataURL(file);
+}
+function saveTeamSettings(){
+  const name=document.getElementById('settingsTeamName').value.trim();
+  const coach=document.getElementById('settingsCoachName').value.trim();
+  const preview=document.getElementById('settingsLogoPreview');
+  data.settings ||= {logo:'',teamName:'',coachName:''};
+  data.settings.teamName=name||TEAM_NAMES[activeTeamKey];
+  data.settings.coachName=coach||TEAM_COACHES[activeTeamKey];
+  if(preview?.src?.startsWith('data:'))data.settings.logo=preview.src;
+  TEAM_NAMES[activeTeamKey]=data.settings.teamName;
+  TEAM_COACHES[activeTeamKey]=data.settings.coachName;
+  document.getElementById('activeTeamLabel').textContent=`${TEAM_NAMES[activeTeamKey]} · Coach ${TEAM_COACHES[activeTeamKey]}`;
+  closeModal();
+  refreshTeamLogos();
+  save();
+}
+function removeTeamLogo(){
+  data.settings ||= {};
+  data.settings.logo='';
+  refreshTeamLogos();
+  closeModal();
+  save();
 }
 
 
@@ -860,18 +951,41 @@ function pdfLineupRows(eventId){
   }
   return rows;
 }
+
+function teamDisplayName(){
+  return data.settings?.teamName||TEAM_NAMES[activeTeamKey]||'SC Altstadt';
+}
+function teamCoachName(){
+  return data.settings?.coachName||TEAM_COACHES[activeTeamKey]||'';
+}
+function addLogoToPdf(doc,x=14,y=8,w=22,h=22){
+  const logo=data.settings?.logo;
+  if(!logo)return false;
+  try{
+    const format=logo.includes('image/png')?'PNG':logo.includes('image/webp')?'WEBP':'JPEG';
+    doc.addImage(logo,format,x,y,w,h);
+    return true;
+  }catch(err){
+    console.warn('Logo konnte nicht ins PDF eingefügt werden',err);
+    return false;
+  }
+}
+
 function addPdfHeader(doc,title,event){
+  const hasLogo=addLogoToPdf(doc,14,8,22,22);
+  const x=hasLogo?40:14;
   doc.setFont('helvetica','bold');
   doc.setFontSize(18);
-  doc.text('SC Altstadt',14,16);
+  doc.text(teamDisplayName(),x,16);
   doc.setFontSize(14);
-  doc.text(title,14,24);
+  doc.text(title,x,24);
   doc.setFont('helvetica','normal');
-  doc.setFontSize(10);
+  doc.setFontSize(9);
+  if(teamCoachName())doc.text(`Coach: ${teamCoachName()}`,x,30);
   if(event){
-    doc.text(`Datum: ${fmtDateLong(event.date)}`,14,32);
-    doc.text(`Zeit: ${event.time}`,14,38);
-    if(event.title)doc.text(`Bezeichnung: ${safePdfText(event.title)}`,14,44);
+    doc.text(`Datum: ${fmtDateLong(event.date)}`,14,36);
+    doc.text(`Zeit: ${event.time}`,14,42);
+    if(event.title)doc.text(`Bezeichnung: ${safePdfText(event.title)}`,14,48);
   }
 }
 function addSectionTitle(doc,text,y){
@@ -1086,13 +1200,16 @@ function downloadMonthlyTrainingPdf(){
     const monthTrainings=trainings.filter(t=>t.date.startsWith(month));
     const pageWidth=doc.internal.pageSize.getWidth();
 
+    const hasLogo=addLogoToPdf(doc,10,6,18,18);
+    const titleX=hasLogo?34:14;
     doc.setFont('helvetica','bold');
     doc.setFontSize(16);
-    doc.text(`SC Altstadt - Trainingsuebersicht ${monthLabel(month)}`,14,14);
+    doc.text(`${teamDisplayName()} - Trainingsuebersicht ${monthLabel(month)}`,titleX,14);
 
     doc.setFont('helvetica','normal');
     doc.setFontSize(8);
-    doc.text('DA = Spieler nimmt teil    AB = Spieler ist abgemeldet',14,20);
+    if(teamCoachName())doc.text(`Coach: ${teamCoachName()}`,titleX,19);
+    doc.text('DA = Spieler nimmt teil    AB = Spieler ist abgemeldet',14,24);
 
     const dateLabels=monthTrainings.map(t=>{
       const d=new Date(t.date+'T12:00:00');
@@ -1114,7 +1231,7 @@ function downloadMonthlyTrainingPdf(){
     const trainingColWidth=Math.max(13,remainingWidth/Math.max(1,monthTrainings.length));
 
     doc.autoTable({
-      startY:25,
+      startY:29,
       head:[head],
       body,
       margin:{left:10,right:10},
@@ -1305,16 +1422,17 @@ async function loadCloudState({initial=false}={}){
       if(row.data.teams){
         cloudRoot=row.data;
       }else{
-        cloudRoot={teams:{second:normalizeTeamData(row.data),third:{players:[],events:[],attendance:{},lineups:{},boards:{}}}};
+        cloudRoot={teams:{second:normalizeTeamData(row.data),third:{players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}}}};
       }
       cloudRoot.teams ||= {};
       cloudRoot.teams.second=normalizeTeamData(cloudRoot.teams.second||EMPTY_TEAM_DATA());
-      cloudRoot.teams.third=cloudRoot.teams.third||{players:[],events:[],attendance:{},lineups:{},boards:{}};
+      cloudRoot.teams.third=cloudRoot.teams.third||{players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}};
       cloudRoot.teams.third.players ||= [];
       cloudRoot.teams.third.events ||= [];
       cloudRoot.teams.third.attendance ||= {};
       cloudRoot.teams.third.lineups ||= {};
       cloudRoot.teams.third.boards ||= {};
+      cloudRoot.teams.third.settings ||= {logo:'',teamName:'',coachName:''};
       lastCloudUpdated=row.updated_at||'';
       if(activeTeamKey){
         data=cloudRoot.teams[activeTeamKey];
@@ -1324,7 +1442,7 @@ async function loadCloudState({initial=false}={}){
     }
     setCloudStatus('Synchronisiert','ok');
   }else{
-    cloudRoot={teams:{second:normalizeTeamData(data),third:{players:[],events:[],attendance:{},lineups:{},boards:{}}}};
+    cloudRoot={teams:{second:normalizeTeamData(data),third:{players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}}}};
     await pushCloudState();
   }
 }
@@ -1348,6 +1466,7 @@ async function handleCloudSession(session){
     activeTeamKey=null;
     document.getElementById('teamScreen').classList.add('hidden');
     document.getElementById('teamSwitchBtn').style.display='none';
+    document.getElementById('settingsBtn').style.display='none';
     return;
   }
   authScreen.classList.add('hidden');
@@ -1358,6 +1477,7 @@ async function handleCloudSession(session){
   setCloudStatus('Synchronisiert','ok');
   startCloudPolling();
   const remembered=localStorage.getItem('hockeyCoachActiveTeam');
+  refreshTeamLogos();
   if(remembered&&cloudRoot.teams?.[remembered])selectTeam(remembered);
   else document.getElementById('teamScreen').classList.remove('hidden');
 }
