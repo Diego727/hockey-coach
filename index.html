@@ -159,6 +159,19 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .field{display:grid;gap:5px}
 .field label{font-size:12px;font-weight:700;color:var(--muted)}
 
+
+.series-planner{margin-top:12px;border:1px solid var(--line);border-radius:13px;padding:12px;background:#f8fbfd}
+.series-planner summary{cursor:pointer;font-weight:750}
+.series-planner-body{margin-top:12px;display:grid;gap:10px}
+.series-dates{display:grid;grid-template-columns:1fr 1fr 140px;gap:8px}
+.weekday-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.weekday-option{display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:8px 5px;background:#fff;font-size:12px}
+.weekday-option input{margin:0}
+@media(max-width:700px){
+  .series-dates{grid-template-columns:1fr}
+  .weekday-grid{grid-template-columns:repeat(4,1fr)}
+}
+
 </style>
 </head>
 <body>
@@ -240,7 +253,44 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 <button class="btn primary" onclick="downloadCategoryReport()">Saisonübersicht</button><button class="btn soft" onclick="downloadMonthlyTrainingPdf()">Monatsübersicht</button>
 
 </div>
-<p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p><div id="eventList"></div><div id="quickPlanner" class="quick-planner"></div>
+<p id="trainingHint" class="muted" style="margin:10px 0 0">Bei Trainings sind alle Spieler standardmässig dabei. Du setzt nur Abmeldungen auf „nicht dabei“.</p>
+<details id="seriesPlanner" class="series-planner">
+  <summary>Wiederkehrende Trainings erstellen</summary>
+  <div class="series-planner-body">
+    <div class="series-dates">
+      <div class="field">
+        <label>Saisonbeginn</label>
+        <input id="seriesStart" type="date" value="2026-08-13">
+      </div>
+      <div class="field">
+        <label>Saisonende</label>
+        <input id="seriesEnd" type="date" value="2027-03-31">
+      </div>
+      <div class="field">
+        <label>Uhrzeit</label>
+        <input id="seriesTime" type="time" value="20:00">
+      </div>
+    </div>
+    <div class="field">
+      <label>Trainingstage auswählen</label>
+      <div class="weekday-grid">
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="1"> Mo</label>
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="2"> Di</label>
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="3"> Mi</label>
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="4"> Do</label>
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="5"> Fr</label>
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="6"> Sa</label>
+        <label class="weekday-option"><input class="seriesDay" type="checkbox" value="0"> So</label>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn primary" onclick="createRecurringTrainings()">Trainings für ganze Saison erstellen</button>
+      <span class="muted">Bestehende Termine mit gleichem Datum und gleicher Uhrzeit werden nicht doppelt erstellt.</span>
+    </div>
+  </div>
+</details>
+<div id="eventList"></div>
+<div id="quickPlanner" class="quick-planner"></div>
 </div>
 
 <div class="card selected-card">
@@ -598,6 +648,78 @@ function addEvent(){
  }
  selectedId=id;newTitle.value='';save()
 }
+
+function createRecurringTrainings(){
+  if(currentType!=='training')return;
+
+  const startValue=document.getElementById('seriesStart').value;
+  const endValue=document.getElementById('seriesEnd').value;
+  const time=document.getElementById('seriesTime').value||'20:00';
+  const selectedDays=[...document.querySelectorAll('.seriesDay:checked')].map(input=>Number(input.value));
+
+  if(!startValue||!endValue){
+    alert('Bitte Saisonbeginn und Saisonende auswählen.');
+    return;
+  }
+  if(selectedDays.length===0){
+    alert('Bitte mindestens einen Trainingstag auswählen.');
+    return;
+  }
+
+  const start=new Date(startValue+'T12:00:00');
+  const end=new Date(endValue+'T12:00:00');
+
+  if(end<start){
+    alert('Das Saisonende muss nach dem Saisonbeginn liegen.');
+    return;
+  }
+
+  let created=0;
+  let skipped=0;
+
+  for(let date=new Date(start);date<=end;date.setDate(date.getDate()+1)){
+    if(!selectedDays.includes(date.getDay()))continue;
+
+    const dateString=[
+      date.getFullYear(),
+      String(date.getMonth()+1).padStart(2,'0'),
+      String(date.getDate()).padStart(2,'0')
+    ].join('-');
+
+    const duplicate=data.events.some(event=>
+      event.type==='training' &&
+      event.date===dateString &&
+      event.time===time
+    );
+
+    if(duplicate){
+      skipped++;
+      continue;
+    }
+
+    const id='training_'+dateString+'_'+time+'_'+crypto.randomUUID();
+    data.events.push({
+      id,
+      type:'training',
+      date:dateString,
+      time,
+      title:''
+    });
+
+    data.attendance[id]={};
+    for(const player of data.players){
+      data.attendance[id][player.id]='present';
+    }
+    created++;
+  }
+
+  save();
+  alert(
+    `${created} Trainings wurden erstellt.`+
+    (skipped?` ${skipped} bereits vorhandene Termine wurden übersprungen.`:'')
+  );
+}
+
 function generateSeasonTrainings(){
  if(currentType!=='training')return;
  const start=new Date('2026-08-13T12:00:00');
