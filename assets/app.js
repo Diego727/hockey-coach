@@ -25,6 +25,7 @@ function normalizeTeamData(teamData){
   for(const p of normalized.players){
     if(!('jerseyNumber' in p))p.jerseyNumber='';
     if(!('birthday' in p))p.birthday='';
+    if(!('email' in p))p.email='';
   }
   for(const e of normalized.events){
     if(e.type==='training'){
@@ -443,7 +444,8 @@ function addPlayer(){
    position,
    shot,
    jerseyNumber:playerNumber.value.trim(),
-   birthday:playerBirthday.value
+   birthday:playerBirthday.value,
+   email:playerEmail.value.trim()
  };
  data.players.push(newPlayer);
 
@@ -454,7 +456,7 @@ function addPlayer(){
    }
  }
 
- playerName.value='';playerNumber.value='';playerBirthday.value='';save()
+ playerName.value='';playerNumber.value='';playerBirthday.value='';playerEmail.value='';save()
 }
 function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.players=data.players.filter(p=>p.id!==id);for(const a of Object.values(data.attendance))delete a[id];save()}
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
@@ -602,7 +604,8 @@ function renderPlayers(){
      </select>
      <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
      <input type="date" value="${p.birthday||''}" onchange="changeBirthday('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createOrUpdatePlayerLogin('${p.id}')">Login vorbereiten</button>
+     <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
    </div>`;
    playerAdminList.appendChild(row)
  }
@@ -1420,118 +1423,162 @@ async function loadCloudState({initial=false}={}){
 }
 function startCloudPolling(){
   clearInterval(cloudPollTimer);
-  cloudPollTimer=setInterval(async()=>{await loadCloudState();await overlayPilotStatusForCoach();},5000);
+  cloudPollTimer=setInterval(async()=>{await loadCloudState();await syncPlayerStatusesIntoCoachView();},5000);
   document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='visible'&&cloudUser)loadCloudState();
   });
 }
 
-const PLAYER_PILOT_EMAIL='diego.schwarzenbach@olten.ch';
 
-function isPilotPlayerLogin(){
-  return (cloudUser?.email||'').toLowerCase()===PLAYER_PILOT_EMAIL.toLowerCase();
+let currentPlayerProfile=null;
+let currentPlayerSchedule=null;
+
+async function getCurrentPlayerProfile(){
+  const {data,error}=await cloudClient
+    .from('player_profiles')
+    .select('id,club_id,team_key,player_ref,display_name,email')
+    .eq('auth_user_id',cloudUser.id)
+    .maybeSingle();
+
+  if(error){
+    console.warn(error);
+    return null;
+  }
+  return data||null;
 }
 
-async function loadPlayerPilot(){
+async function loadPlayerPortal(){
   const app=document.getElementById('playerPilotApp');
   const coach=document.getElementById('coachModeApp');
+
   coach.classList.add('hidden');
   app.classList.remove('hidden');
-  document.getElementById('teamScreen').classList.add('hidden');
+  app.className='player-portal';
+
+  document.getElementById('teamScreen')?.classList.add('hidden');
   document.getElementById('teamSwitchBtn').style.display='none';
   document.getElementById('settingsBtn').style.display='none';
-  document.getElementById('activeTeamLabel').textContent='SC Altstadt 2. Liga · Spielerzugang';
-  setCloudStatus('Synchronisiert','ok');
 
   const {data:payload,error}=await cloudClient.rpc('get_my_player_schedule');
   if(error){
-    app.innerHTML=`<div class="player-pilot-card"><h2>Spielerzugang</h2><p class="danger">Daten konnten nicht geladen werden: ${error.message}</p></div>`;
+    app.innerHTML=`<div class="player-portal-card"><h2>Spielerportal</h2><p class="danger">Daten konnten nicht geladen werden: ${error.message}</p></div>`;
     return;
   }
 
-  const profile=payload?.profile||{display_name:'Diego Schwarzenbach (Test)',team_key:'second'};
+  currentPlayerSchedule=payload;
+  const profile=payload?.profile||currentPlayerProfile;
   const events=payload?.events||[];
   const statuses=payload?.statuses||{};
 
-  app.innerHTML=`<div class="player-pilot-card">
-    <div class="player-pilot-head">
-      <div><h2 style="margin:0">Hallo ${profile.display_name}</h2><div class="muted">SC Altstadt 2. Liga</div></div>
-      <span class="player-pilot-badge">Spielerzugang</span>
+  document.getElementById('activeTeamLabel').textContent=
+    `${TEAM_NAMES[profile.team_key]||'SC Altstadt'} · Spielerportal`;
+  setCloudStatus('Synchronisiert','ok');
+
+  app.innerHTML=`<div class="player-portal-card">
+    <div class="player-portal-head">
+      <div>
+        <h2 style="margin:0">Hallo ${profile.display_name}</h2>
+        <div class="muted">${TEAM_NAMES[profile.team_key]||'SC Altstadt'}</div>
+        <div class="player-email">${cloudUser.email||''}</div>
+      </div>
+      <span class="player-role-badge">Spielerzugang</span>
     </div>
-    <p>Du kannst ausschliesslich deine eigene Teilnahme ändern.</p>
+    <p>Du kannst nur deine eigene Teilnahme ändern.</p>
   </div>
-  <div class="player-pilot-card">
+  <div class="player-portal-card">
     <h2>Nächste Termine</h2>
     ${events.length?events.map(event=>{
       const status=statuses[event.id]||'present';
       const type=event.type==='training'?'Training':event.type==='game'?'Spiel':'Trainingslager';
-      return `<div class="player-pilot-event">
-        <div><strong>${type} · ${fmtDate(event.date)}</strong><span>${event.time||''}${event.title?' · '+event.title:''}</span></div>
-        <div class="player-pilot-actions">
-          <button class="${status==='present'?'success':'soft'}" onclick="savePilotStatus('${event.id}','present')">Dabei</button>
-          <button class="${status==='absent'?'danger':'soft'}" onclick="savePilotStatus('${event.id}','absent')">Nicht dabei</button>
-          <button class="${status==='open'?'on-unknown':'soft'}" onclick="savePilotStatus('${event.id}','open')">Offen</button>
+      return `<div class="player-portal-event">
+        <div>
+          <strong>${type} · ${fmtDate(event.date)}</strong>
+          <span>${event.time||''}${event.title?' · '+event.title:''}</span>
+        </div>
+        <div class="player-portal-actions">
+          <button class="${status==='present'?'success':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','present')">Dabei</button>
+          <button class="${status==='absent'?'danger':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','absent')">Nicht dabei</button>
+          <button class="${status==='open'?'on-unknown':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','open')">Offen</button>
         </div>
       </div>`;
     }).join(''):'<p class="muted">Keine kommenden Termine vorhanden.</p>'}
   </div>`;
 }
 
-async function savePilotStatus(eventId,status){
-  const {error}=await cloudClient.rpc('set_my_player_status',{target_event_id:eventId,new_status:status});
+async function saveOwnPlayerStatus(eventId,status){
+  const {error}=await cloudClient.rpc('set_my_player_status',{
+    target_event_id:eventId,
+    new_status:status
+  });
+
   if(error){
     alert('Status konnte nicht gespeichert werden: '+error.message);
     return;
   }
-  await loadPlayerPilot();
+  await loadPlayerPortal();
 }
 
-function ensurePilotPlayerInCoachData(){
-  const team=cloudRoot.teams?.second;
-  if(!team)return;
-  let player=team.players.find(p=>p.id==='test-diego-player');
-  if(!player){
-    player={
-      id:'test-diego-player',
-      name:'Diego Schwarzenbach (Test)',
-      role:'Feldspieler',
-      position:'Stürmer',
-      shot:'Links',
-      jerseyNumber:'',
-      birthday:'',
-      email:PLAYER_PILOT_EMAIL
-    };
-    team.players.push(player);
-    for(const event of team.events||[]){
-      team.attendance[event.id] ||= {};
-      team.attendance[event.id][player.id] ||= 'present';
-    }
-    cloudRoot.teams.second=team;
-  }
-}
+async function syncPlayerStatusesIntoCoachView(){
+  if(!cloudUser||currentPlayerProfile)return;
 
-async function overlayPilotStatusForCoach(){
-  if(!cloudUser||isPilotPlayerLogin())return;
-  const {data:rows,error}=await cloudClient.from('player_event_status')
-    .select('event_id,status,player_profiles!inner(player_ref,team_key)')
+  const {data:rows,error}=await cloudClient
+    .from('player_event_status')
+    .select('event_id,status,player_profiles!inner(player_ref,team_key,club_id)')
     .eq('player_profiles.club_id',SHARED_CLUB_ID);
-  if(error){console.warn(error);return;}
+
+  if(error){
+    console.warn(error);
+    return;
+  }
+
   let changed=false;
   for(const row of rows||[]){
     const profile=row.player_profiles;
     const team=cloudRoot.teams?.[profile.team_key];
     if(!team||!profile.player_ref)continue;
+
     team.attendance[row.event_id] ||= {};
     if(team.attendance[row.event_id][profile.player_ref]!==row.status){
       team.attendance[row.event_id][profile.player_ref]=row.status;
       changed=true;
     }
   }
+
   if(changed&&activeTeamKey){
     data=cloudRoot.teams[activeTeamKey];
     localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
     renderAll();
   }
+}
+
+async function createOrUpdatePlayerLogin(playerId){
+  if(!activeTeamKey)return;
+  const player=data.players.find(p=>p.id===playerId);
+  if(!player)return;
+
+  const email=(player.email||'').trim().toLowerCase();
+  if(!email){
+    alert('Bitte beim Spieler zuerst eine E-Mail-Adresse eintragen.');
+    return;
+  }
+
+  const {error}=await cloudClient.from('player_profiles').upsert({
+    club_id:SHARED_CLUB_ID,
+    team_key:activeTeamKey,
+    player_ref:player.id,
+    display_name:player.name,
+    email
+  },{onConflict:'club_id,email'});
+
+  if(error){
+    alert('Spielerzugang konnte nicht vorbereitet werden: '+error.message);
+    return;
+  }
+
+  alert(
+    'Spielerzugang vorbereitet. Lade diese E-Mail nun in Supabase Authentication ein:\n\n'+
+    email
+  );
 }
 
 async function handleCloudSession(session){
@@ -1554,19 +1601,21 @@ async function handleCloudSession(session){
   logoutBtn.style.display='inline-block';
   cloudReady=false;
 
-  if(isPilotPlayerLogin()){
-    await loadPlayerPilot();
+  currentPlayerProfile=await getCurrentPlayerProfile();
+
+  if(currentPlayerProfile){
+    await loadPlayerPortal();
     cloudReady=true;
     clearInterval(cloudPollTimer);
-    cloudPollTimer=setInterval(loadPlayerPilot,5000);
+    cloudPollTimer=setInterval(loadPlayerPortal,5000);
     return;
   }
 
   document.getElementById('coachModeApp').classList.remove('hidden');
   document.getElementById('playerPilotApp').classList.add('hidden');
   await loadCloudState({initial:true});
-  ensurePilotPlayerInCoachData();
-  await overlayPilotStatusForCoach();
+  
+  await syncPlayerStatusesIntoCoachView();
   cloudReady=true;
   setCloudStatus('Synchronisiert','ok');
   startCloudPolling();

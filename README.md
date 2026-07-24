@@ -35,3 +35,15 @@ Aufstellungen und Logins werden durch den Projektumbau nicht gelöscht.
 - Abwesenheiten für den ganzen Kader erfassen
 - automatische Übernahme in Trainings, Spiele und Trainingslager
 - Positionsübersicht für den nächsten Termin
+
+
+## V4.2 – Spielerportal
+
+- allgemeine Spielerlogins statt festem Testkonto
+- E-Mail pro Spieler
+- Spieler sieht nur eigene Termine
+- Status: Dabei / Nicht dabei / Offen
+- Coach sieht Selbstmeldungen automatisch
+- Button „Login vorbereiten“ bei jedem Spieler
+
+Zusätzlich muss `player_portal_setup.sql` einmal in Supabase ausgeführt werden.
