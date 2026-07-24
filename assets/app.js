@@ -20,6 +20,7 @@ function normalizeTeamData(teamData){
   normalized.lineups ||= {};
   normalized.boards ||= {};
   normalized.absences ||= [];
+  normalized.absences ||= [];
   normalized.settings ||= {logo:'',teamName:'',coachName:''};
   for(const p of normalized.players){
     if(!('jerseyNumber' in p))p.jerseyNumber='';
@@ -85,6 +86,7 @@ function selectTeam(teamKey){
     third.lineups ||= {};
     third.boards ||= {};
     third.absences ||= [];
+    third.absences ||= [];
     third.settings ||= {logo:'',teamName:'',coachName:''};
   }
 
@@ -100,6 +102,7 @@ function selectTeam(teamKey){
   selectedId=null;
   refreshTeamLogos();
   renderAll();
+  showDashboard();
 }
 
 function refreshTeamLogos(){
@@ -1580,6 +1583,140 @@ async function initCloud(){
       await handleCloudSession(session);
     }
   });
+}
+
+
+function hideAllMainViews(){
+  document.querySelectorAll('.app-view').forEach(v=>v.classList.add('hidden'));
+  const dashboard=document.getElementById('dashboardView');
+  const availability=document.getElementById('availabilityView');
+  if(dashboard)dashboard.classList.add('hidden');
+  if(availability)availability.classList.add('hidden');
+}
+
+function upcomingEvents(type){
+  const today=new Date().toISOString().slice(0,10);
+  return (data.events||[])
+    .filter(e=>e.type===type && e.date>=today)
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+}
+
+function availabilityCountsForEvent(event){
+  const attendance=data.attendance?.[event.id]||{};
+  const present=data.players.filter(p=>(attendance[p.id]||'present')==='present');
+  return {
+    total:present.length,
+    forwards:present.filter(p=>p.position==='Stürmer').length,
+    defenders:present.filter(p=>p.position==='Verteidiger').length,
+    goalies:present.filter(p=>p.position==='Goalie').length
+  };
+}
+
+function showDashboard(){
+  if(!activeTeamKey)return;
+  hideAllMainViews();
+  const view=document.getElementById('dashboardView');
+  view.classList.remove('hidden');
+
+  const nextTraining=upcomingEvents('training')[0];
+  const nextGame=upcomingEvents('game')[0];
+  const currentEvent=nextTraining||nextGame;
+  const counts=currentEvent?availabilityCountsForEvent(currentEvent):{total:0,forwards:0,defenders:0,goalies:0};
+
+  const absenceItems=(data.absences||[])
+    .filter(a=>a.end>=new Date().toISOString().slice(0,10))
+    .sort((a,b)=>a.start.localeCompare(b.start))
+    .slice(0,8);
+
+  view.innerHTML=`<div class="dashboard-grid">
+    <div class="dashboard-card">
+      <h3>Nächstes Training</h3>
+      ${nextTraining?`<strong>${fmtDate(nextTraining.date)}</strong><div class="muted">${nextTraining.time}${nextTraining.title?' · '+nextTraining.title:''}</div>`:'<div class="muted">Kein kommendes Training</div>'}
+    </div>
+    <div class="dashboard-card">
+      <h3>Nächstes Spiel</h3>
+      ${nextGame?`<strong>${fmtDate(nextGame.date)}</strong><div class="muted">${nextGame.time}${nextGame.title?' · '+nextGame.title:''}</div>`:'<div class="muted">Kein kommendes Spiel</div>'}
+    </div>
+    <div class="dashboard-card" style="grid-column:1/-1">
+      <h3>Verfügbarkeit beim nächsten Termin</h3>
+      <div class="dashboard-kpis">
+        <div class="dashboard-kpi"><strong>${counts.total}</strong><span>Total</span></div>
+        <div class="dashboard-kpi"><strong>${counts.forwards}</strong><span>Stürmer</span></div>
+        <div class="dashboard-kpi"><strong>${counts.defenders}</strong><span>Verteidiger</span></div>
+        <div class="dashboard-kpi"><strong>${counts.goalies}</strong><span>Goalies</span></div>
+      </div>
+    </div>
+    <div class="dashboard-card" style="grid-column:1/-1">
+      <h3>Kommende Abwesenheiten</h3>
+      ${absenceItems.length?absenceItems.map(a=>{
+        const p=data.players.find(x=>x.id===a.playerId);
+        return `<div class="absence-item"><div><strong>${p?.name||'Unbekannt'}</strong><div class="absence-meta">${fmtDate(a.start)} bis ${fmtDate(a.end)}</div></div><span class="reason-pill">${a.reason}</span></div>`;
+      }).join(''):'<div class="muted">Keine kommenden Abwesenheiten</div>'}
+    </div>
+  </div>`;
+}
+
+function showAvailability(){
+  if(!activeTeamKey)return;
+  hideAllMainViews();
+  const view=document.getElementById('availabilityView');
+  view.classList.remove('hidden');
+  renderAvailabilityView();
+}
+
+function renderAvailabilityView(){
+  const view=document.getElementById('availabilityView');
+  if(!view)return;
+  data.absences ||= [];
+
+  const rows=[...data.absences]
+    .sort((a,b)=>a.start.localeCompare(b.start))
+    .map(a=>{
+      const p=data.players.find(x=>x.id===a.playerId);
+      return `<tr>
+        <td>${p?.name||'Unbekannt'}</td>
+        <td>${fmtDate(a.start)}</td>
+        <td>${fmtDate(a.end)}</td>
+        <td><span class="reason-pill">${a.reason}</span></td>
+        <td><button class="btn danger" onclick="deleteAvailability('${a.id}')">Löschen</button></td>
+      </tr>`;
+    }).join('');
+
+  view.innerHTML=`<div class="card">
+    <div class="section-head">
+      <div><h2>Verfügbarkeiten</h2><p>Abwesenheitszeiträume des gesamten Kaders</p></div>
+    </div>
+    <div class="availability-toolbar">
+      <div class="field"><label>Spieler</label><select id="availabilityPlayer">${data.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
+      <div class="field"><label>Von</label><input id="availabilityStart" type="date"></div>
+      <div class="field"><label>Bis</label><input id="availabilityEnd" type="date"></div>
+      <div class="field"><label>Grund</label><input id="availabilityReason" placeholder="Ferien, Arbeit, WK, verletzt …"></div>
+      <button class="btn primary" onclick="addAvailability()">Hinzufügen</button>
+    </div>
+    ${rows?`<div style="overflow:auto"><table class="availability-table"><thead><tr><th>Spieler</th><th>Von</th><th>Bis</th><th>Grund</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="availability-empty">Noch keine Abwesenheiten eingetragen.</div>'}
+  </div>`;
+}
+
+function addAvailability(){
+  const playerId=document.getElementById('availabilityPlayer').value;
+  const start=document.getElementById('availabilityStart').value;
+  const end=document.getElementById('availabilityEnd').value;
+  const reason=document.getElementById('availabilityReason').value.trim()||'Abwesend';
+  if(!playerId||!start||!end)return alert('Bitte Spieler, Von und Bis ausfüllen.');
+  if(end<start)return alert('Das Bis-Datum muss nach dem Von-Datum liegen.');
+
+  data.absences ||= [];
+  data.absences.push({id:'absence_'+crypto.randomUUID(),playerId,start,end,reason});
+  applyAllAbsences();
+  save();
+  renderAvailabilityView();
+}
+
+function deleteAvailability(id){
+  data.absences=(data.absences||[]).filter(a=>a.id!==id);
+  recalculateAttendanceFromAbsences();
+  save();
+  renderAvailabilityView();
 }
 
 function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}

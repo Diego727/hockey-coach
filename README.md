@@ -26,3 +26,12 @@ https://diego727.github.io/hockey-coach/
 
 Die Cloud-Daten liegen weiterhin in Supabase. Spieler, Trainings, Abwesenheiten,
 Aufstellungen und Logins werden durch den Projektumbau nicht gelöscht.
+
+
+## V4.1
+
+- Dashboard
+- zentraler Menüpunkt Verfügbarkeiten
+- Abwesenheiten für den ganzen Kader erfassen
+- automatische Übernahme in Trainings, Spiele und Trainingslager
+- Positionsübersicht für den nächsten Termin

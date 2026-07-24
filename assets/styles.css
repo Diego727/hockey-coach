@@ -241,3 +241,23 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .absence-form{display:grid;grid-template-columns:1fr 1fr 1.2fr auto;gap:8px}
 .absence-badge{display:inline-block;font-size:11px;padding:3px 7px;border-radius:999px;background:#fdeaea;color:#9e2525;margin-left:6px}
 @media(max-width:700px){.absence-form{grid-template-columns:1fr}.absence-item{grid-template-columns:1fr}}
+
+
+.dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.dashboard-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px}
+.dashboard-card h3{margin:0 0 8px}
+.dashboard-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.dashboard-kpi{border-radius:12px;padding:12px;background:#f4f7fa;text-align:center}
+.dashboard-kpi strong{display:block;font-size:24px}
+.dashboard-kpi span{font-size:12px;color:var(--muted)}
+.availability-toolbar{display:grid;grid-template-columns:1fr 1fr 1fr 1.2fr auto;gap:8px;align-items:end}
+.availability-table{width:100%;border-collapse:collapse;margin-top:14px}
+.availability-table th,.availability-table td{border-bottom:1px solid var(--line);padding:10px;text-align:left}
+.availability-table th{background:#f5f8fb;position:sticky;top:0}
+.availability-empty{padding:24px;text-align:center;color:var(--muted)}
+.reason-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#fdeaea;color:#9e2525;font-size:12px}
+@media(max-width:800px){
+  .dashboard-grid{grid-template-columns:1fr}
+  .dashboard-kpis{grid-template-columns:repeat(2,1fr)}
+  .availability-toolbar{grid-template-columns:1fr}
+}
