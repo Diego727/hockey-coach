@@ -63,50 +63,57 @@ const TEAM_COACHES={
   third:'Sandro Zorzin'
 };
 function showTeamSelection(){
-  if(cloudUser){
-    refreshTeamLogos();
-    document.getElementById('teamScreen').classList.remove('hidden');
+  const screen=document.getElementById('teamScreen');
+  if(!screen){
+    alert('Die Mannschaftsauswahl konnte nicht geladen werden. Bitte Ctrl + F5 drücken.');
+    return;
   }
+  refreshTeamLogos();
+  screen.classList.remove('hidden');
 }
 function selectTeam(teamKey){
-  activeTeamKey=teamKey;
+  if(!['second','third'].includes(teamKey)){
+    alert('Ungültige Mannschaft.');
+    return;
+  }
+
+  cloudRoot ||= {teams:{}};
   cloudRoot.teams ||= {};
 
   if(!cloudRoot.teams[teamKey]){
     cloudRoot.teams[teamKey]=teamKey==='third'
-      ? {players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}}
+      ? {players:[],events:[],attendance:{},lineups:{},boards:{},absences:[],settings:{logo:'',teamName:'',coachName:''}}
       : EMPTY_TEAM_DATA();
   }
 
-  if(teamKey==='second'){
-    cloudRoot.teams[teamKey]=normalizeTeamData(cloudRoot.teams[teamKey]);
-  }else{
-    const third=cloudRoot.teams[teamKey];
-    third.players ||= [];
-    third.events ||= [];
-    third.attendance ||= {};
-    third.lineups ||= {};
-    third.boards ||= {};
-    third.absences ||= [];
-    third.absences ||= [];
-    third.settings ||= {logo:'',teamName:'',coachName:''};
-  }
-
-  data=cloudRoot.teams[teamKey];
+  activeTeamKey=teamKey;
+  data=normalizeTeamData(cloudRoot.teams[teamKey]);
   data.absences ||= [];
-  applyAllAbsences();
+  cloudRoot.teams[teamKey]=data;
+
   localStorage.setItem('hockeyCoachActiveTeam',teamKey);
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
-  document.getElementById('teamScreen').classList.add('hidden');
-  document.getElementById('activeTeamLabel').textContent=`${TEAM_NAMES[teamKey]} · Coach ${TEAM_COACHES[teamKey]}`;
-  document.getElementById('teamSwitchBtn').style.display='inline-block';
-  document.getElementById('settingsBtn').style.display='inline-block';
+
+  const screen=document.getElementById('teamScreen');
+  if(screen)screen.classList.add('hidden');
+
+  const label=document.getElementById('activeTeamLabel');
+  if(label)label.textContent=`${TEAM_NAMES[teamKey]} · Coach ${TEAM_COACHES[teamKey]}`;
+
+  const switchButton=document.getElementById('teamSwitchBtn');
+  if(switchButton)switchButton.style.display='inline-block';
+
+  const settingsButton=document.getElementById('settingsBtn');
+  if(settingsButton)settingsButton.style.display='inline-block';
+
   selectedId=null;
   refreshTeamLogos();
   renderAll();
-  showDashboard();
-}
 
+  if(typeof showDashboard==='function'){
+    showDashboard();
+  }
+}
 function refreshTeamLogos(){
   const secondLogo=cloudRoot.teams?.second?.settings?.logo||'';
   const thirdLogo=cloudRoot.teams?.third?.settings?.logo||'';
@@ -1683,10 +1690,18 @@ async function handleCloudSession(session){
   cloudReady=true;
   setCloudStatus('Synchronisiert','ok');
   startCloudPolling();
-  const remembered=localStorage.getItem('hockeyCoachActiveTeam');
   refreshTeamLogos();
-  if(remembered&&cloudRoot.teams?.[remembered])selectTeam(remembered);
-  else document.getElementById('teamScreen').classList.remove('hidden');
+
+  const remembered=localStorage.getItem('hockeyCoachActiveTeam');
+  if(remembered&&cloudRoot.teams?.[remembered]){
+    selectTeam(remembered);
+  }else{
+    activeTeamKey=null;
+    showTeamSelection();
+  }
+
+  const switchButton=document.getElementById('teamSwitchBtn');
+  if(switchButton)switchButton.style.display='inline-block';
 }
 async function initCloud(){
   const {data:{session}}=await cloudClient.auth.getSession();
@@ -1845,4 +1860,15 @@ document.addEventListener('DOMContentLoaded',()=>{
       addPlayer();
     };
   }
+});
+
+
+document.addEventListener('DOMContentLoaded',()=>{
+  setTimeout(()=>{
+    const authHidden=document.getElementById('authScreen')?.classList.contains('hidden');
+    const coachVisible=!document.getElementById('coachModeApp')?.classList.contains('hidden');
+    if(authHidden&&coachVisible&&!activeTeamKey){
+      showTeamSelection();
+    }
+  },1200);
 });
