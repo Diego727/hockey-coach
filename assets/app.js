@@ -1693,12 +1693,9 @@ async function handleCloudSession(session){
   refreshTeamLogos();
 
   const remembered=localStorage.getItem('hockeyCoachActiveTeam');
-  if(remembered&&cloudRoot.teams?.[remembered]){
-    selectTeam(remembered);
-  }else{
-    activeTeamKey=null;
-    showTeamSelection();
-  }
+  const initialTeam=(remembered&&cloudRoot.teams?.[remembered])?remembered:'second';
+
+  selectTeam(initialTeam);
 
   const switchButton=document.getElementById('teamSwitchBtn');
   if(switchButton)switchButton.style.display='inline-block';
@@ -1871,4 +1868,20 @@ document.addEventListener('DOMContentLoaded',()=>{
       showTeamSelection();
     }
   },1200);
+});
+
+
+function quickSelectSecondTeam(){
+  selectTeam('second');
+}
+function quickSelectThirdTeam(){
+  selectTeam('third');
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  setTimeout(()=>{
+    if(cloudUser && !currentPlayerProfile && !activeTeamKey){
+      selectTeam('second');
+    }
+  },1500);
 });
