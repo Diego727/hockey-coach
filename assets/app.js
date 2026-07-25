@@ -276,7 +276,31 @@ function save(){
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function fmtDateLong(s){return new Intl.DateTimeFormat('de-CH',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function showTab(tab,btn){for(const id of ['events','players','stats'])document.getElementById(id+'Tab').classList.toggle('hidden',id!==tab);document.querySelectorAll('.tab').forEach(b=>b.className='btn soft tab');btn.className='btn primary tab';renderAll()}
-function setType(type){currentType=type;selectedId=null;document.querySelectorAll('.type-switch button').forEach(b=>b.classList.remove('active'));document.getElementById(type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp').classList.add('active');document.getElementById('scheduleBtn').style.display=type==='training'?'inline-block':'none';document.getElementById('trainingHint').style.display=type==='training'?'block':'none';renderAll()}
+function setType(type){
+  currentType=type;
+  selectedId=null;
+
+  document.querySelectorAll('.type-switch button').forEach(button=>button.classList.remove('active'));
+
+  const activeButton=document.getElementById(
+    type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp'
+  );
+  if(activeButton)activeButton.classList.add('active');
+
+  const scheduleButton=document.getElementById('scheduleBtn');
+  if(scheduleButton)scheduleButton.style.display=type==='training'?'inline-block':'none';
+
+  const trainingHint=document.getElementById('trainingHint');
+  if(trainingHint)trainingHint.style.display=type==='training'?'block':'none';
+
+  const pdfHint=document.getElementById('pdfHint');
+  if(pdfHint)pdfHint.style.display=type==='training'?'block':'none';
+
+  const seriesPlanner=document.getElementById('seriesPlanner');
+  if(seriesPlanner)seriesPlanner.style.display=type==='training'?'block':'none';
+
+  renderAll();
+}
 function addEvent(){
  const date=newDate.value,time=newTime.value||'20:00',title=newTitle.value.trim();
  if(!date)return alert('Bitte Datum wählen.');
@@ -436,56 +460,69 @@ function setAllAttendance(eventId,status){
 }
 
 function addPlayer(){
- const nameInput=document.getElementById('playerName');
- const positionInput=document.getElementById('playerPosition');
- const shotInput=document.getElementById('playerShot');
- const numberInput=document.getElementById('playerNumber');
- const birthdayInput=document.getElementById('playerBirthday');
- const emailInput=document.getElementById('playerEmail');
+  try{
+    const nameInput=document.getElementById('playerName');
+    const positionInput=document.getElementById('playerPosition');
+    const shotInput=document.getElementById('playerShot');
+    const numberInput=document.getElementById('playerNumber');
+    const birthdayInput=document.getElementById('playerBirthday');
+    const emailInput=document.getElementById('playerEmail');
 
- if(!nameInput||!positionInput||!shotInput){
-   alert('Das Spielerformular konnte nicht geladen werden. Bitte die Seite mit Ctrl + F5 neu laden.');
-   return;
- }
+    if(!nameInput||!positionInput||!shotInput){
+      throw new Error('Das Spielerformular ist unvollständig geladen.');
+    }
 
- const name=nameInput.value.trim();
- const position=positionInput.value;
- const shot=shotInput.value;
+    const name=nameInput.value.trim();
+    if(!name){
+      alert('Bitte Vorname und Nachname eingeben.');
+      nameInput.focus();
+      return;
+    }
 
- if(!name){
-   alert('Bitte Namen eingeben.');
-   nameInput.focus();
-   return;
- }
+    if(!activeTeamKey||!data){
+      alert('Bitte zuerst eine Mannschaft auswählen.');
+      return;
+    }
 
- const newPlayer={
-   id:'p'+Date.now(),
-   name,
-   role:position==='Goalie'?'Goalie':'Feldspieler',
-   position,
-   shot,
-   jerseyNumber:numberInput?.value.trim()||'',
-   birthday:birthdayInput?.value||'',
-   email:emailInput?.value.trim()||''
- };
+    data.players ||= [];
+    data.events ||= [];
+    data.attendance ||= {};
+    data.absences ||= [];
 
- data.players.push(newPlayer);
+    const newPlayer={
+      id:'p_'+crypto.randomUUID(),
+      name,
+      role:positionInput.value==='Goalie'?'Goalie':'Feldspieler',
+      position:positionInput.value,
+      shot:shotInput.value,
+      jerseyNumber:numberInput?.value.trim()||'',
+      birthday:birthdayInput?.value||'',
+      email:emailInput?.value.trim().toLowerCase()||''
+    };
 
- for(const event of data.events){
-   data.attendance[event.id] ||= {};
-   data.attendance[event.id][newPlayer.id]='present';
-   applyAbsencesToEvent(event);
- }
+    data.players.push(newPlayer);
 
- nameInput.value='';
- if(numberInput)numberInput.value='';
- if(birthdayInput)birthdayInput.value='';
- if(emailInput)emailInput.value='';
+    for(const event of data.events){
+      data.attendance[event.id] ||= {};
+      data.attendance[event.id][newPlayer.id]='present';
 
- save();
- alert(`${newPlayer.name} wurde hinzugefügt.`);
+      if(typeof applyAbsencesToEvent==='function'){
+        applyAbsencesToEvent(event);
+      }
+    }
+
+    nameInput.value='';
+    if(numberInput)numberInput.value='';
+    if(birthdayInput)birthdayInput.value='';
+    if(emailInput)emailInput.value='';
+
+    save();
+    alert(`${newPlayer.name} wurde erfolgreich hinzugefügt.`);
+  }catch(error){
+    console.error('Spieler hinzufügen fehlgeschlagen:',error);
+    alert(`Spieler konnte nicht hinzugefügt werden:\n${error.message}`);
+  }
 }
-function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.players=data.players.filter(p=>p.id!==id);for(const a of Object.values(data.attendance))delete a[id];save()}
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
@@ -1798,3 +1835,14 @@ function deleteAvailability(id){
 function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
 renderAll();
 initCloud();
+
+
+document.addEventListener('DOMContentLoaded',()=>{
+  const playerAddButton=document.querySelector('button[onclick="addPlayer()"]');
+  if(playerAddButton){
+    playerAddButton.onclick=(event)=>{
+      event.preventDefault();
+      addPlayer();
+    };
+  }
+});
