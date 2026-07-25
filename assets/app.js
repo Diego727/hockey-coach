@@ -1,3 +1,4 @@
+const HOCKEY_COACH_VERSION='5.0.0';
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
 const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
@@ -435,28 +436,54 @@ function setAllAttendance(eventId,status){
 }
 
 function addPlayer(){
- const name=playerName.value.trim(),position=playerPosition.value,shot=playerShot.value;
- if(!name)return alert('Bitte Namen eingeben.');
+ const nameInput=document.getElementById('playerName');
+ const positionInput=document.getElementById('playerPosition');
+ const shotInput=document.getElementById('playerShot');
+ const numberInput=document.getElementById('playerNumber');
+ const birthdayInput=document.getElementById('playerBirthday');
+ const emailInput=document.getElementById('playerEmail');
+
+ if(!nameInput||!positionInput||!shotInput){
+   alert('Das Spielerformular konnte nicht geladen werden. Bitte die Seite mit Ctrl + F5 neu laden.');
+   return;
+ }
+
+ const name=nameInput.value.trim();
+ const position=positionInput.value;
+ const shot=shotInput.value;
+
+ if(!name){
+   alert('Bitte Namen eingeben.');
+   nameInput.focus();
+   return;
+ }
+
  const newPlayer={
    id:'p'+Date.now(),
    name,
    role:position==='Goalie'?'Goalie':'Feldspieler',
    position,
    shot,
-   jerseyNumber:playerNumber.value.trim(),
-   birthday:playerBirthday.value,
-   email:playerEmail.value.trim()
+   jerseyNumber:numberInput?.value.trim()||'',
+   birthday:birthdayInput?.value||'',
+   email:emailInput?.value.trim()||''
  };
+
  data.players.push(newPlayer);
 
- for(const e of data.events){
-   if(e.type==='training'){
-     data.attendance[e.id] ||= {};
-     data.attendance[e.id][newPlayer.id]='present';
-   }
+ for(const event of data.events){
+   data.attendance[event.id] ||= {};
+   data.attendance[event.id][newPlayer.id]='present';
+   applyAbsencesToEvent(event);
  }
 
- playerName.value='';playerNumber.value='';playerBirthday.value='';playerEmail.value='';save()
+ nameInput.value='';
+ if(numberInput)numberInput.value='';
+ if(birthdayInput)birthdayInput.value='';
+ if(emailInput)emailInput.value='';
+
+ save();
+ alert(`${newPlayer.name} wurde hinzugefügt.`);
 }
 function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.players=data.players.filter(p=>p.id!==id);for(const a of Object.values(data.attendance))delete a[id];save()}
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
