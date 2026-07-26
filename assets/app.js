@@ -86,7 +86,7 @@ function selectTeam(teamKey){
     third.attendance ||= {};
     third.lineups ||= {};
     third.boards ||= {};
-    third.absences ||= [];
+      cloudRoot.teams.third.absences ||= [];
     third.absences ||= [];
     third.settings ||= {logo:'',teamName:'',coachName:''};
   }
