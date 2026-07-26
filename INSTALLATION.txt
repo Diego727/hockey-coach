@@ -1,0 +1,1 @@
+V6 benötigt einmalig SQL + Edge Function + GitHub-Upload.

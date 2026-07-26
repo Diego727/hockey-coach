@@ -1,0 +1,4 @@
+project_id = "amhdxwbbnbvwpyrxxjho"
+
+[functions.manage-player-user]
+verify_jwt = true

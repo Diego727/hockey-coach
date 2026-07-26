@@ -1,51 +1,18 @@
-# Hockey Coach V5
+# Hockey Coach V6
 
-Saubere Projektbasis für die SC-Altstadt-Coach-App.
+Spielerzugänge ohne Einladungs-E-Mail:
 
-## Struktur
+1. Coach hinterlegt die Spieler-E-Mail.
+2. Coach klickt auf **Zugang erstellen**.
+3. Coach vergibt ein Startpasswort.
+4. Spieler meldet sich direkt an.
+5. Beim ersten Login ändert der Spieler sein Passwort.
 
-```text
-index.html
-assets/
-  app.js
-  styles.css
-  icon.svg
-manifest.webmanifest
-player_portal_setup.sql
-.github/
-  workflows/
-    deploy.yml
-```
+## Einmalige Einrichtung
 
-## Enthalten
+- `supabase_v6_setup.sql` im Supabase SQL Editor ausführen.
+- Edge Function `manage-player-user` mit dem Inhalt aus
+  `supabase/functions/manage-player-user/index.ts` deployen.
+- GitHub-Projekt hochladen.
 
-- Supabase-Login und gemeinsame Vereins-Cloud
-- SC Altstadt 2. Liga und 3. Liga
-- Spieler, Trainings, Spiele und Trainingslager
-- Anwesenheiten und Verfügbarkeiten
-- Aufstellungen mit Drag-and-drop
-- Coachboard
-- PDF-Rapporte
-- Dashboard
-- Spielerportal mit eigenem Login
-
-## Wichtig
-
-Es gibt absichtlich nur:
-
-- eine `index.html`
-- eine `assets/app.js`
-- eine `assets/styles.css`
-
-Keine ZIP-Dateien, keine `index[1].html` und keine zweite `app.js` im Hauptordner.
-
-## Veröffentlichung
-
-1. Den gesamten Inhalt dieses Ordners in das GitHub-Repository laden.
-2. In GitHub `Settings → Pages` öffnen.
-3. Als Quelle `GitHub Actions` wählen.
-4. Unter `Actions` warten, bis „Hockey Coach veröffentlichen“ grün ist.
-
-App-Adresse:
-
-https://diego727.github.io/hockey-coach/
+Der `service_role`-Schlüssel wird nie im Browser oder in GitHub gespeichert.

@@ -1,4 +1,3 @@
-const HOCKEY_COACH_VERSION='5.0.0';
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
 const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
@@ -63,57 +62,50 @@ const TEAM_COACHES={
   third:'Sandro Zorzin'
 };
 function showTeamSelection(){
-  const screen=document.getElementById('teamScreen');
-  if(!screen){
-    alert('Die Mannschaftsauswahl konnte nicht geladen werden. Bitte Ctrl + F5 drücken.');
-    return;
+  if(cloudUser){
+    refreshTeamLogos();
+    document.getElementById('teamScreen').classList.remove('hidden');
   }
-  refreshTeamLogos();
-  screen.classList.remove('hidden');
 }
 function selectTeam(teamKey){
-  if(!['second','third'].includes(teamKey)){
-    alert('Ungültige Mannschaft.');
-    return;
-  }
-
-  cloudRoot ||= {teams:{}};
+  activeTeamKey=teamKey;
   cloudRoot.teams ||= {};
 
   if(!cloudRoot.teams[teamKey]){
     cloudRoot.teams[teamKey]=teamKey==='third'
-      ? {players:[],events:[],attendance:{},lineups:{},boards:{},absences:[],settings:{logo:'',teamName:'',coachName:''}}
+      ? {players:[],events:[],attendance:{},lineups:{},boards:{},settings:{logo:'',teamName:'',coachName:''}}
       : EMPTY_TEAM_DATA();
   }
 
-  activeTeamKey=teamKey;
-  data=normalizeTeamData(cloudRoot.teams[teamKey]);
-  data.absences ||= [];
-  cloudRoot.teams[teamKey]=data;
+  if(teamKey==='second'){
+    cloudRoot.teams[teamKey]=normalizeTeamData(cloudRoot.teams[teamKey]);
+  }else{
+    const third=cloudRoot.teams[teamKey];
+    third.players ||= [];
+    third.events ||= [];
+    third.attendance ||= {};
+    third.lineups ||= {};
+    third.boards ||= {};
+    third.absences ||= [];
+    third.absences ||= [];
+    third.settings ||= {logo:'',teamName:'',coachName:''};
+  }
 
+  data=cloudRoot.teams[teamKey];
+  data.absences ||= [];
+  applyAllAbsences();
   localStorage.setItem('hockeyCoachActiveTeam',teamKey);
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
-
-  const screen=document.getElementById('teamScreen');
-  if(screen)screen.classList.add('hidden');
-
-  const label=document.getElementById('activeTeamLabel');
-  if(label)label.textContent=`${TEAM_NAMES[teamKey]} · Coach ${TEAM_COACHES[teamKey]}`;
-
-  const switchButton=document.getElementById('teamSwitchBtn');
-  if(switchButton)switchButton.style.display='inline-block';
-
-  const settingsButton=document.getElementById('settingsBtn');
-  if(settingsButton)settingsButton.style.display='inline-block';
-
+  document.getElementById('teamScreen').classList.add('hidden');
+  document.getElementById('activeTeamLabel').textContent=`${TEAM_NAMES[teamKey]} · Coach ${TEAM_COACHES[teamKey]}`;
+  document.getElementById('teamSwitchBtn').style.display='inline-block';
+  document.getElementById('settingsBtn').style.display='inline-block';
   selectedId=null;
   refreshTeamLogos();
   renderAll();
-
-  if(typeof showDashboard==='function'){
-    showDashboard();
-  }
+  showDashboard();
 }
+
 function refreshTeamLogos(){
   const secondLogo=cloudRoot.teams?.second?.settings?.logo||'';
   const thirdLogo=cloudRoot.teams?.third?.settings?.logo||'';
@@ -283,31 +275,7 @@ function save(){
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function fmtDateLong(s){return new Intl.DateTimeFormat('de-CH',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function showTab(tab,btn){for(const id of ['events','players','stats'])document.getElementById(id+'Tab').classList.toggle('hidden',id!==tab);document.querySelectorAll('.tab').forEach(b=>b.className='btn soft tab');btn.className='btn primary tab';renderAll()}
-function setType(type){
-  currentType=type;
-  selectedId=null;
-
-  document.querySelectorAll('.type-switch button').forEach(button=>button.classList.remove('active'));
-
-  const activeButton=document.getElementById(
-    type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp'
-  );
-  if(activeButton)activeButton.classList.add('active');
-
-  const scheduleButton=document.getElementById('scheduleBtn');
-  if(scheduleButton)scheduleButton.style.display=type==='training'?'inline-block':'none';
-
-  const trainingHint=document.getElementById('trainingHint');
-  if(trainingHint)trainingHint.style.display=type==='training'?'block':'none';
-
-  const pdfHint=document.getElementById('pdfHint');
-  if(pdfHint)pdfHint.style.display=type==='training'?'block':'none';
-
-  const seriesPlanner=document.getElementById('seriesPlanner');
-  if(seriesPlanner)seriesPlanner.style.display=type==='training'?'block':'none';
-
-  renderAll();
-}
+function setType(type){currentType=type;selectedId=null;document.querySelectorAll('.type-switch button').forEach(b=>b.classList.remove('active'));document.getElementById(type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp').classList.add('active');document.getElementById('scheduleBtn').style.display=type==='training'?'inline-block':'none';document.getElementById('trainingHint').style.display=type==='training'?'block':'none';renderAll()}
 function addEvent(){
  const date=newDate.value,time=newTime.value||'20:00',title=newTitle.value.trim();
  if(!date)return alert('Bitte Datum wählen.');
@@ -467,69 +435,56 @@ function setAllAttendance(eventId,status){
 }
 
 function addPlayer(){
-  try{
-    const nameInput=document.getElementById('playerName');
-    const positionInput=document.getElementById('playerPosition');
-    const shotInput=document.getElementById('playerShot');
-    const numberInput=document.getElementById('playerNumber');
-    const birthdayInput=document.getElementById('playerBirthday');
-    const emailInput=document.getElementById('playerEmail');
+ const nameInput=document.getElementById('playerName');
+ const positionInput=document.getElementById('playerPosition');
+ const shotInput=document.getElementById('playerShot');
+ const numberInput=document.getElementById('playerNumber');
+ const birthdayInput=document.getElementById('playerBirthday');
+ const emailInput=document.getElementById('playerEmail');
 
-    if(!nameInput||!positionInput||!shotInput){
-      throw new Error('Das Spielerformular ist unvollständig geladen.');
-    }
+ if(!nameInput||!positionInput||!shotInput){
+   alert('Das Spielerformular konnte nicht geladen werden. Bitte die Seite mit Ctrl + F5 neu laden.');
+   return;
+ }
 
-    const name=nameInput.value.trim();
-    if(!name){
-      alert('Bitte Vorname und Nachname eingeben.');
-      nameInput.focus();
-      return;
-    }
+ const name=nameInput.value.trim();
+ const position=positionInput.value;
+ const shot=shotInput.value;
 
-    if(!activeTeamKey||!data){
-      alert('Bitte zuerst eine Mannschaft auswählen.');
-      return;
-    }
+ if(!name){
+   alert('Bitte Namen eingeben.');
+   nameInput.focus();
+   return;
+ }
 
-    data.players ||= [];
-    data.events ||= [];
-    data.attendance ||= {};
-    data.absences ||= [];
+ const newPlayer={
+   id:'p'+Date.now(),
+   name,
+   role:position==='Goalie'?'Goalie':'Feldspieler',
+   position,
+   shot,
+   jerseyNumber:numberInput?.value.trim()||'',
+   birthday:birthdayInput?.value||'',
+   email:emailInput?.value.trim()||''
+ };
 
-    const newPlayer={
-      id:'p_'+crypto.randomUUID(),
-      name,
-      role:positionInput.value==='Goalie'?'Goalie':'Feldspieler',
-      position:positionInput.value,
-      shot:shotInput.value,
-      jerseyNumber:numberInput?.value.trim()||'',
-      birthday:birthdayInput?.value||'',
-      email:emailInput?.value.trim().toLowerCase()||''
-    };
+ data.players.push(newPlayer);
 
-    data.players.push(newPlayer);
+ for(const event of data.events){
+   data.attendance[event.id] ||= {};
+   data.attendance[event.id][newPlayer.id]='present';
+   applyAbsencesToEvent(event);
+ }
 
-    for(const event of data.events){
-      data.attendance[event.id] ||= {};
-      data.attendance[event.id][newPlayer.id]='present';
+ nameInput.value='';
+ if(numberInput)numberInput.value='';
+ if(birthdayInput)birthdayInput.value='';
+ if(emailInput)emailInput.value='';
 
-      if(typeof applyAbsencesToEvent==='function'){
-        applyAbsencesToEvent(event);
-      }
-    }
-
-    nameInput.value='';
-    if(numberInput)numberInput.value='';
-    if(birthdayInput)birthdayInput.value='';
-    if(emailInput)emailInput.value='';
-
-    save();
-    alert(`${newPlayer.name} wurde erfolgreich hinzugefügt.`);
-  }catch(error){
-    console.error('Spieler hinzufügen fehlgeschlagen:',error);
-    alert(`Spieler konnte nicht hinzugefügt werden:\n${error.message}`);
-  }
+ save();
+ alert(`${newPlayer.name} wurde hinzugefügt.`);
 }
+function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.players=data.players.filter(p=>p.id!==id);for(const a of Object.values(data.attendance))delete a[id];save()}
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
@@ -675,7 +630,7 @@ function renderPlayers(){
      </select>
      <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
      <input type="date" value="${p.birthday||''}" onchange="changeBirthday('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createOrUpdatePlayerLogin('${p.id}')">Login vorbereiten</button>
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
    </div>`;
    playerAdminList.appendChild(row)
@@ -1652,6 +1607,38 @@ async function createOrUpdatePlayerLogin(playerId){
   );
 }
 
+
+async function createPlayerAccessWithPassword(playerId){
+  const player=data.players.find(p=>p.id===playerId);
+  if(!player)return;
+  const email=(player.email||'').trim().toLowerCase();
+  if(!email)return alert('Bitte zuerst eine Spieler-E-Mail hinterlegen.');
+  const startPassword=prompt(`Startpasswort für ${player.name} (mindestens 8 Zeichen):`);
+  if(!startPassword)return;
+
+  const {data:result,error}=await cloudClient.functions.invoke('manage-player-user',{
+    body:{
+      action:'create',clubId:SHARED_CLUB_ID,teamKey:activeTeamKey,
+      playerRef:player.id,displayName:player.name,email,startPassword
+    }
+  });
+  if(error||!result?.ok)return alert('Zugang konnte nicht erstellt werden:\n'+(result?.error||error?.message||'Fehler'));
+  alert(`Zugang erstellt.\nE-Mail: ${email}\nStartpasswort: ${startPassword}`);
+}
+
+async function forceFirstPasswordChange(){
+  if(cloudUser?.user_metadata?.force_password_change!==true)return false;
+  const password=prompt('Bitte beim ersten Login ein neues Passwort mit mindestens 8 Zeichen festlegen:');
+  if(!password)return true;
+  if(password.length<8){alert('Mindestens 8 Zeichen.');return true;}
+  const metadata={...(cloudUser.user_metadata||{}),force_password_change:false};
+  const {data,error}=await cloudClient.auth.updateUser({password,data:metadata});
+  if(error){alert(error.message);return true;}
+  cloudUser=data.user;
+  alert('Passwort wurde geändert.');
+  return false;
+}
+
 async function handleCloudSession(session){
   cloudUser=session?.user||null;
   const authScreen=document.getElementById('authScreen');
@@ -1690,15 +1677,10 @@ async function handleCloudSession(session){
   cloudReady=true;
   setCloudStatus('Synchronisiert','ok');
   startCloudPolling();
-  refreshTeamLogos();
-
   const remembered=localStorage.getItem('hockeyCoachActiveTeam');
-  const initialTeam=(remembered&&cloudRoot.teams?.[remembered])?remembered:'second';
-
-  selectTeam(initialTeam);
-
-  const switchButton=document.getElementById('teamSwitchBtn');
-  if(switchButton)switchButton.style.display='inline-block';
+  refreshTeamLogos();
+  if(remembered&&cloudRoot.teams?.[remembered])selectTeam(remembered);
+  else document.getElementById('teamScreen').classList.remove('hidden');
 }
 async function initCloud(){
   const {data:{session}}=await cloudClient.auth.getSession();
@@ -1847,41 +1829,3 @@ function deleteAvailability(id){
 function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
 renderAll();
 initCloud();
-
-
-document.addEventListener('DOMContentLoaded',()=>{
-  const playerAddButton=document.querySelector('button[onclick="addPlayer()"]');
-  if(playerAddButton){
-    playerAddButton.onclick=(event)=>{
-      event.preventDefault();
-      addPlayer();
-    };
-  }
-});
-
-
-document.addEventListener('DOMContentLoaded',()=>{
-  setTimeout(()=>{
-    const authHidden=document.getElementById('authScreen')?.classList.contains('hidden');
-    const coachVisible=!document.getElementById('coachModeApp')?.classList.contains('hidden');
-    if(authHidden&&coachVisible&&!activeTeamKey){
-      showTeamSelection();
-    }
-  },1200);
-});
-
-
-function quickSelectSecondTeam(){
-  selectTeam('second');
-}
-function quickSelectThirdTeam(){
-  selectTeam('third');
-}
-
-document.addEventListener('DOMContentLoaded',()=>{
-  setTimeout(()=>{
-    if(cloudUser && !currentPlayerProfile && !activeTeamKey){
-      selectTeam('second');
-    }
-  },1500);
-});
