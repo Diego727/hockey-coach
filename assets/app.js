@@ -20,7 +20,6 @@ function normalizeTeamData(teamData){
   normalized.lineups ||= {};
   normalized.boards ||= {};
   normalized.absences ||= [];
-  normalized.absences ||= [];
   normalized.settings ||= {logo:'',teamName:'',coachName:''};
   for(const p of normalized.players){
     if(!('jerseyNumber' in p))p.jerseyNumber='';
@@ -275,7 +274,30 @@ function save(){
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function fmtDateLong(s){return new Intl.DateTimeFormat('de-CH',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 function showTab(tab,btn){for(const id of ['events','players','stats'])document.getElementById(id+'Tab').classList.toggle('hidden',id!==tab);document.querySelectorAll('.tab').forEach(b=>b.className='btn soft tab');btn.className='btn primary tab';renderAll()}
-function setType(type){currentType=type;selectedId=null;document.querySelectorAll('.type-switch button').forEach(b=>b.classList.remove('active'));document.getElementById(type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp').classList.add('active');document.getElementById('scheduleBtn').style.display=type==='training'?'inline-block':'none';document.getElementById('trainingHint').style.display=type==='training'?'block':'none';renderAll()}
+function setType(type){
+  currentType=type;
+  selectedId=null;
+  document.querySelectorAll('.type-switch button').forEach(b=>b.classList.remove('active'));
+
+  const activeButton=document.getElementById(
+    type==='training'?'typeTraining':type==='game'?'typeGame':'typeCamp'
+  );
+  if(activeButton)activeButton.classList.add('active');
+
+  const scheduleButton=document.getElementById('scheduleBtn');
+  if(scheduleButton)scheduleButton.style.display=type==='training'?'inline-block':'none';
+
+  const trainingHint=document.getElementById('trainingHint');
+  if(trainingHint)trainingHint.style.display=type==='training'?'block':'none';
+
+  const pdfHint=document.getElementById('pdfHint');
+  if(pdfHint)pdfHint.style.display=type==='training'?'block':'none';
+
+  const seriesPlanner=document.getElementById('seriesPlanner');
+  if(seriesPlanner)seriesPlanner.style.display=type==='training'?'block':'none';
+
+  renderAll();
+}
 function addEvent(){
  const date=newDate.value,time=newTime.value||'20:00',title=newTitle.value.trim();
  if(!date)return alert('Bitte Datum wählen.');
@@ -489,6 +511,21 @@ function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
 function changeBirthday(id,birthday){const p=data.players.find(x=>x.id===id);if(p){p.birthday=birthday;save()}}
+function updatePlayerEmail(id,email){
+  const player=data.players.find(p=>p.id===id);
+  if(!player)return;
+
+  const normalizedEmail=(email||'').trim().toLowerCase();
+
+  if(normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)){
+    alert('Bitte eine gültige E-Mail-Adresse eingeben.');
+    renderPlayers();
+    return;
+  }
+
+  player.email=normalizedEmail;
+  save();
+}
 function fmtBirthday(s){if(!s)return '–';return new Intl.DateTimeFormat('de-CH',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 
 
