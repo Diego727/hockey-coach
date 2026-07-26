@@ -1432,7 +1432,7 @@ async function loadCloudState({initial=false}={}){
       cloudRoot.teams.third.attendance ||= {};
       cloudRoot.teams.third.lineups ||= {};
       cloudRoot.teams.third.boards ||= {};
-    third.absences ||= [];
+    cloudRoot.teams.third.absences ||= [];
       cloudRoot.teams.third.settings ||= {logo:'',teamName:'',coachName:''};
       lastCloudUpdated=row.updated_at||'';
       if(activeTeamKey){
