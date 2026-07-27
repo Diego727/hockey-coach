@@ -270,6 +270,50 @@ repeating-linear-gradient(0deg,#fafdff 0,#fafdff 60px,#eef7fc 61px,#eef7fc 62px)
 .player-portal-event:first-child{border-top:0}
 .player-portal-event span{display:block;font-size:12px;color:var(--muted)}
 .player-portal-actions{display:flex;gap:6px;flex-wrap:wrap}
+.player-portal-actions button{
+  min-width:110px;
+  padding:10px 14px;
+  border:2px solid transparent;
+  border-radius:10px;
+  font-weight:700;
+  opacity:.55;
+  transition:.15s ease;
+}
+
+.player-portal-actions button:hover{
+  opacity:.85;
+  transform:translateY(-1px);
+}
+
+.player-portal-actions button.success{
+  background:#168a45;
+  color:#fff;
+  border-color:#0f6e36;
+  opacity:1;
+  box-shadow:0 0 0 3px rgba(22,138,69,.18);
+}
+
+.player-portal-actions button.danger{
+  background:#c93131;
+  color:#fff;
+  border-color:#9e2424;
+  opacity:1;
+  box-shadow:0 0 0 3px rgba(201,49,49,.18);
+}
+
+.player-portal-actions button.on-unknown{
+  background:#e6a700;
+  color:#1f1f1f;
+  border-color:#b98500;
+  opacity:1;
+  box-shadow:0 0 0 3px rgba(230,167,0,.2);
+}
+
+.player-portal-actions button.soft{
+  background:#eef2f6;
+  color:#44515f;
+  border-color:#d5dce3;
+}
 .player-role-badge{font-size:12px;background:#e8f0f8;color:#174b77;border-radius:999px;padding:5px 9px}
 .player-email{font-size:12px;color:var(--muted);word-break:break-all}
 @media(max-width:650px){
