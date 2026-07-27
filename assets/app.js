@@ -1646,22 +1646,80 @@ async function createOrUpdatePlayerLogin(playerId){
 }
 
 
+async function readEdgeFunctionError(error,result){
+  if(result?.error)return result.error;
+
+  const response=error?.context;
+  if(response){
+    try{
+      const payload=await response.clone().json();
+      if(payload?.error)return payload.error;
+      if(payload?.message)return payload.message;
+    }catch(_jsonError){
+      try{
+        const text=await response.text();
+        if(text)return text;
+      }catch(_textError){}
+    }
+  }
+
+  return error?.message||'Unbekannter Fehler';
+}
+
 async function createPlayerAccessWithPassword(playerId){
   const player=data.players.find(p=>p.id===playerId);
   if(!player)return;
+
   const email=(player.email||'').trim().toLowerCase();
-  if(!email)return alert('Bitte zuerst eine Spieler-E-Mail hinterlegen.');
-  const startPassword=prompt(`Startpasswort für ${player.name} (mindestens 8 Zeichen):`);
+  if(!email){
+    alert('Bitte zuerst eine Spieler-E-Mail hinterlegen.');
+    return;
+  }
+
+  const startPassword=prompt(
+    `Startpasswort für ${player.name} (mindestens 8 Zeichen):`
+  );
   if(!startPassword)return;
 
-  const {data:result,error}=await cloudClient.functions.invoke('manage-player-user',{
-    body:{
-      action:'create',clubId:SHARED_CLUB_ID,teamKey:activeTeamKey,
-      playerRef:player.id,displayName:player.name,email,startPassword
+  if(startPassword.length<8){
+    alert('Das Startpasswort muss mindestens 8 Zeichen lang sein.');
+    return;
+  }
+
+  try{
+    const {data:result,error}=await cloudClient.functions.invoke(
+      'manage-player-user',
+      {
+        headers:{
+          apikey:SUPABASE_PUBLISHABLE_KEY
+        },
+        body:{
+          action:'create',
+          clubId:SHARED_CLUB_ID,
+          teamKey:activeTeamKey,
+          playerRef:player.id,
+          displayName:player.name,
+          email,
+          startPassword
+        }
+      }
+    );
+
+    if(error||!result?.ok){
+      const message=await readEdgeFunctionError(error,result);
+      alert('Zugang konnte nicht erstellt werden:\n\n'+message);
+      return;
     }
-  });
-  if(error||!result?.ok)return alert('Zugang konnte nicht erstellt werden:\n'+(result?.error||error?.message||'Fehler'));
-  alert(`Zugang erstellt.\nE-Mail: ${email}\nStartpasswort: ${startPassword}`);
+
+    alert(
+      `Zugang erstellt.\n\nE-Mail: ${email}\nStartpasswort: ${startPassword}`
+    );
+  }catch(error){
+    alert(
+      'Zugang konnte nicht erstellt werden:\n\n'+
+      (error instanceof Error?error.message:String(error))
+    );
+  }
 }
 
 async function forceFirstPasswordChange(){
