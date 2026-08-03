@@ -2348,6 +2348,96 @@ function ensurePlayerPortalTheme(){
       color:rgba(255,255,255,.18);
     }
 
+
+    header,
+    .topbar,
+    .app-header{
+      background:
+        linear-gradient(135deg,#173f32 0%,#245744 100%) !important;
+      color:#fff !important;
+      border-bottom:1px solid rgba(255,255,255,.12) !important;
+      box-shadow:0 10px 28px rgba(23,63,50,.18) !important;
+    }
+
+    header .brand,
+    header .header-brand,
+    .topbar .brand,
+    .app-header .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+
+    #headerTeamLogo{
+      width:54px !important;
+      height:54px !important;
+      border-radius:14px !important;
+      object-fit:contain !important;
+      background:#fff !important;
+      padding:4px !important;
+      border:1px solid rgba(255,255,255,.45) !important;
+      box-shadow:0 8px 18px rgba(0,0,0,.18) !important;
+    }
+
+    #activeTeamLabel{
+      color:#fff !important;
+      font-weight:800 !important;
+      letter-spacing:-.01em;
+    }
+
+    #cloudStatus{
+      background:rgba(255,255,255,.12) !important;
+      color:#fff !important;
+      border:1px solid rgba(255,255,255,.22) !important;
+      border-radius:999px !important;
+      padding:7px 11px !important;
+      font-weight:800 !important;
+    }
+
+    #cloudStatus.ok{
+      background:rgba(255,255,255,.14) !important;
+      color:#fff !important;
+    }
+
+    #cloudStatus.error{
+      background:#b52a31 !important;
+      color:#fff !important;
+      border-color:#b52a31 !important;
+    }
+
+    #cloudStatus.syncing{
+      background:rgba(255,255,255,.10) !important;
+      color:#fff !important;
+    }
+
+    header .btn,
+    .topbar .btn,
+    .app-header .btn{
+      background:rgba(255,255,255,.10) !important;
+      color:#fff !important;
+      border:1px solid rgba(255,255,255,.24) !important;
+      border-radius:11px !important;
+      font-weight:800 !important;
+    }
+
+    header .btn:hover,
+    .topbar .btn:hover,
+    .app-header .btn:hover{
+      background:rgba(255,255,255,.18) !important;
+      transform:translateY(-1px);
+    }
+
+    #logoutBtn{
+      background:#fff !important;
+      color:#173f32 !important;
+      border-color:#fff !important;
+    }
+
+    #logoutBtn:hover{
+      background:#edf4f1 !important;
+    }
+
+
     @media(max-width:720px){
       #playerPilotApp.player-portal{
         padding:12px;
