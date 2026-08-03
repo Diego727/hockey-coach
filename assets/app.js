@@ -1735,10 +1735,6 @@ async function getCurrentPlayerProfile(){
   return data||null;
 }
 
-
-let playerPortalType='training';
-let playerPortalMonth=new Date().toISOString().slice(0,7);
-
 async function loadPlayerPortal(){
   const app=document.getElementById('playerPilotApp');
   const coach=document.getElementById('coachModeApp');
@@ -1765,6 +1761,10 @@ async function loadPlayerPortal(){
   currentPlayerSchedule=payload;
 
   const profile=payload?.profile||currentPlayerProfile;
+  const events=payload?.events||[];
+  const statuses=payload?.statuses||{};
+  const reasons=payload?.reasons||{};
+
   const teamName=TEAM_NAMES[profile.team_key]||'SC Altstadt';
   const teamLogo=profile.team_key==='second'
     ? (cloudRoot.teams?.second?.settings?.logo||defaultLogoData('2'))
@@ -1778,6 +1778,111 @@ async function loadPlayerPortal(){
 
   setCloudStatus('Synchronisiert','ok');
 
+  const sortedEvents=[...events].sort((a,b)=>
+    (a.date+(a.time||'')).localeCompare(b.date+(b.time||''))
+  );
+
+  const trainings=sortedEvents.filter(event=>event.type==='training');
+  const games=sortedEvents.filter(event=>event.type==='game');
+  const camps=sortedEvents.filter(event=>event.type==='camp');
+  const nextEvent=sortedEvents[0]||null;
+
+  function statusText(status){
+    if(status==='present')return 'Dabei';
+    if(status==='absent')return 'Nicht dabei';
+    return 'Offen';
+  }
+
+  function statusBadgeClass(status){
+    if(status==='present')return 'success';
+    if(status==='absent')return 'danger';
+    return 'on-unknown';
+  }
+
+  function renderEventCard(event){
+    const status=statuses[event.id]||'present';
+    const reason=reasons[event.id]||'';
+    const isNext=nextEvent?.id===event.id;
+    const typeLabel=event.type==='training'
+      ? 'Training'
+      : event.type==='game'
+        ? 'Spiel'
+        : 'Trainingslager';
+
+    return `
+      <div class="player-portal-event"
+           style="
+             border:1px solid var(--line);
+             border-radius:14px;
+             padding:14px;
+             margin-top:10px;
+             background:${isNext?'#f4f9ff':'#fff'};
+             box-shadow:${isNext?'0 0 0 2px rgba(31,95,153,.12)':'none'};
+           ">
+        <div style="min-width:0">
+          ${isNext?'<div class="player-role-badge" style="display:inline-block;margin-bottom:7px">Nächster Termin</div>':''}
+          <strong style="display:block;font-size:16px">${typeLabel} · ${fmtDate(event.date)}</strong>
+          <span>${event.time||''}${event.title?' · '+event.title:''}</span>
+
+          <div style="margin-top:8px">
+            <span class="${statusBadgeClass(status)}"
+                  style="
+                    display:inline-block;
+                    padding:5px 9px;
+                    border-radius:999px;
+                    font-size:12px;
+                    font-weight:750;
+                  ">
+              ${statusText(status)}
+            </span>
+          </div>
+
+          ${reason?`
+            <div style="
+              margin-top:8px;
+              padding:8px 10px;
+              border-radius:10px;
+              background:#fff3f3;
+              color:#922;
+              font-size:13px;
+            ">
+              <strong>Grund:</strong> ${reason}
+            </div>
+          `:''}
+        </div>
+
+        <div class="player-portal-actions">
+          <button class="${status==='present'?'success':'soft'}"
+                  onclick="requestOwnPlayerStatus('${event.id}','present')">
+            Dabei
+          </button>
+
+          <button class="${status==='absent'?'danger':'soft'}"
+                  onclick="requestOwnPlayerStatus('${event.id}','absent')">
+            Nicht dabei
+          </button>
+
+          <button class="${status==='open'?'on-unknown':'soft'}"
+                  onclick="requestOwnPlayerStatus('${event.id}','open')">
+            Offen
+          </button>
+        </div>
+      </div>`;
+  }
+
+  function renderSection(title,icon,sectionEvents,emptyText){
+    return `
+      <div class="player-portal-card">
+        <div class="player-portal-head">
+          <h2 style="margin:0">${icon} ${title}</h2>
+          <span class="player-role-badge">${sectionEvents.length}</span>
+        </div>
+        ${sectionEvents.length
+          ? sectionEvents.map(renderEventCard).join('')
+          : `<p class="muted">${emptyText}</p>`}
+      </div>`;
+  }
+
   app.innerHTML=`
     <div class="player-portal-card">
       <div class="player-portal-head">
@@ -1786,8 +1891,8 @@ async function loadPlayerPortal(){
             src="${teamLogo}"
             alt="Teamlogo"
             style="
-              width:60px;
-              height:60px;
+              width:64px;
+              height:64px;
               object-fit:contain;
               border-radius:14px;
               border:1px solid var(--line);
@@ -1802,301 +1907,24 @@ async function loadPlayerPortal(){
         </div>
         <span class="player-role-badge">Spielerzugang</span>
       </div>
-    </div>
-
-    <div class="player-portal-card">
-      <div style="
-        display:grid;
-        grid-template-columns:1fr 1fr;
-        gap:10px;
-        margin-bottom:14px;
-      ">
-        <button
-          id="playerPortalTrainingBtn"
-          class="btn ${playerPortalType==='training'?'primary':'soft'}"
-          onclick="setPlayerPortalType('training')">
-          🏒 Trainings
-        </button>
-
-        <button
-          id="playerPortalGameBtn"
-          class="btn ${playerPortalType==='game'?'primary':'soft'}"
-          onclick="setPlayerPortalType('game')">
-          🥅 Spiele
-        </button>
-      </div>
-
-      <div style="
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        gap:8px;
-        margin-bottom:12px;
-      ">
-        <button class="btn soft" onclick="changePlayerPortalMonth(-1)">‹</button>
-        <h2 id="playerPortalMonthTitle" style="margin:0;text-align:center"></h2>
-        <button class="btn soft" onclick="changePlayerPortalMonth(1)">›</button>
-      </div>
-
-      <div style="
-        display:flex;
-        flex-wrap:wrap;
-        gap:8px;
-        margin-bottom:12px;
-        font-size:12px;
-      ">
-        <span style="padding:5px 9px;border-radius:999px;background:#e8f7ee;color:#13733f;font-weight:700">
-          Grün = Dabei
-        </span>
-        <span style="padding:5px 9px;border-radius:999px;background:#fdeaea;color:#a12727;font-weight:700">
-          Rot = Nicht dabei
-        </span>
-        <span style="padding:5px 9px;border-radius:999px;background:#fff4cc;color:#8a6500;font-weight:700">
-          Gelb = Unsicher
-        </span>
-      </div>
-
-      <div id="playerPortalCalendar"></div>
-    </div>
-  `;
-
-  renderPlayerPortalCalendar();
-}
-
-function setPlayerPortalType(type){
-  playerPortalType=type;
-  document.getElementById('playerPortalTrainingBtn').className=
-    'btn '+(type==='training'?'primary':'soft');
-  document.getElementById('playerPortalGameBtn').className=
-    'btn '+(type==='game'?'primary':'soft');
-  renderPlayerPortalCalendar();
-}
-
-function changePlayerPortalMonth(offset){
-  const [year,month]=playerPortalMonth.split('-').map(Number);
-  const next=new Date(year,month-1+offset,1);
-  playerPortalMonth=[
-    next.getFullYear(),
-    String(next.getMonth()+1).padStart(2,'0')
-  ].join('-');
-  renderPlayerPortalCalendar();
-}
-
-function playerPortalStatus(eventId){
-  return currentPlayerSchedule?.statuses?.[eventId]||'present';
-}
-
-function playerPortalReason(eventId){
-  return currentPlayerSchedule?.reasons?.[eventId]||'';
-}
-
-function playerPortalStatusStyle(status){
-  if(status==='present'){
-    return {
-      background:'#e8f7ee',
-      border:'#7ac99b',
-      color:'#13733f',
-      label:'Dabei'
-    };
-  }
-
-  if(status==='absent'){
-    return {
-      background:'#fdeaea',
-      border:'#e59a9a',
-      color:'#a12727',
-      label:'Nicht dabei'
-    };
-  }
-
-  return {
-    background:'#fff4cc',
-    border:'#e2c65f',
-    color:'#8a6500',
-    label:'Unsicher'
-  };
-}
-
-function renderPlayerPortalCalendar(){
-  const target=document.getElementById('playerPortalCalendar');
-  const title=document.getElementById('playerPortalMonthTitle');
-  if(!target||!title||!currentPlayerSchedule)return;
-
-  const [year,month]=playerPortalMonth.split('-').map(Number);
-  const firstDay=new Date(year,month-1,1);
-  const lastDay=new Date(year,month,0);
-
-  title.textContent=new Intl.DateTimeFormat('de-CH',{
-    month:'long',
-    year:'numeric'
-  }).format(firstDay);
-
-  const events=(currentPlayerSchedule.events||[])
-    .filter(event=>
-      event.type===playerPortalType &&
-      event.date.startsWith(playerPortalMonth)
-    )
-    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
-
-  const eventMap={};
-  for(const event of events){
-    eventMap[event.date] ||= [];
-    eventMap[event.date].push(event);
-  }
-
-  const mondayIndex=(firstDay.getDay()+6)%7;
-  const cells=[];
-
-  for(let i=0;i<mondayIndex;i++){
-    cells.push('<div style="min-height:92px;background:#f7f9fb;border-radius:10px"></div>');
-  }
-
-  for(let day=1;day<=lastDay.getDate();day++){
-    const date=[
-      year,
-      String(month).padStart(2,'0'),
-      String(day).padStart(2,'0')
-    ].join('-');
-
-    const dayEvents=eventMap[date]||[];
-
-    const items=dayEvents.map(event=>{
-      const status=playerPortalStatus(event.id);
-      const style=playerPortalStatusStyle(status);
-      const reason=playerPortalReason(event.id);
-
-      return `
-        <button
-          onclick="openPlayerPortalEvent('${event.id}')"
-          style="
-            width:100%;
-            text-align:left;
-            border:1px solid ${style.border};
-            background:${style.background};
-            color:${style.color};
-            border-radius:8px;
-            padding:7px;
-            margin-top:5px;
-            font-size:11px;
-            font-weight:750;
-            cursor:pointer;
-          ">
-          <div>${event.time||''}${event.title?' · '+event.title:''}</div>
-          <div style="font-size:10px;margin-top:2px">${style.label}</div>
-          ${reason?`<div style="font-size:10px;margin-top:2px">Grund: ${reason}</div>`:''}
-        </button>
-      `;
-    }).join('');
-
-    cells.push(`
-      <div style="
-        min-height:92px;
-        border:1px solid var(--line);
-        border-radius:10px;
-        padding:6px;
-        background:#fff;
-      ">
-        <div style="font-weight:800;font-size:12px">${day}</div>
-        ${items}
-      </div>
-    `);
-  }
-
-  target.innerHTML=`
-    <div style="
-      display:grid;
-      grid-template-columns:repeat(7,minmax(0,1fr));
-      gap:5px;
-      font-size:11px;
-      margin-bottom:6px;
-      text-align:center;
-      font-weight:750;
-      color:#586579;
-    ">
-      <div>Mo</div>
-      <div>Di</div>
-      <div>Mi</div>
-      <div>Do</div>
-      <div>Fr</div>
-      <div>Sa</div>
-      <div>So</div>
-    </div>
-
-    <div style="
-      display:grid;
-      grid-template-columns:repeat(7,minmax(0,1fr));
-      gap:5px;
-      overflow-x:auto;
-    ">
-      ${cells.join('')}
-    </div>
-
-    ${events.length?'':`
-      <p class="muted" style="margin-top:14px">
-        In diesem Monat sind keine ${playerPortalType==='training'?'Trainings':'Spiele'} eingetragen.
+      <p style="margin-bottom:0">
+        Du kannst deine Teilnahme selbst festlegen. Bei «Nicht dabei» ist ein Grund erforderlich.
       </p>
-    `}
-  `;
-}
-
-function openPlayerPortalEvent(eventId){
-  const event=(currentPlayerSchedule?.events||[]).find(item=>item.id===eventId);
-  if(!event)return;
-
-  const status=playerPortalStatus(eventId);
-  const reason=playerPortalReason(eventId);
-  const typeLabel=event.type==='training'?'Training':'Spiel';
-
-  openModal(`
-    <h2>${typeLabel}</h2>
-    <div class="stack">
-      <div>
-        <strong>${fmtDate(event.date)} · ${event.time||''}</strong>
-        ${event.title?`<div class="muted">${event.title}</div>`:''}
-      </div>
-
-      ${reason?`
-        <div style="
-          padding:10px;
-          border-radius:10px;
-          background:#fdeaea;
-          color:#922;
-        ">
-          <strong>Abwesenheitsgrund:</strong> ${reason}
-        </div>
-      `:''}
-
-      <div class="row">
-        <button
-          class="btn ${status==='present'?'success':'soft'}"
-          onclick="requestOwnPlayerStatus('${event.id}','present')">
-          Dabei
-        </button>
-
-        <button
-          class="btn ${status==='absent'?'danger':'soft'}"
-          onclick="requestOwnPlayerStatus('${event.id}','absent')">
-          Nicht dabei
-        </button>
-
-        <button
-          class="btn ${status==='open'?'on-unknown':'soft'}"
-          onclick="requestOwnPlayerStatus('${event.id}','open')">
-          Unsicher
-        </button>
-      </div>
     </div>
-  `);
+
+    ${renderSection('Trainings','🏒',trainings,'Keine kommenden Trainings vorhanden.')}
+    ${renderSection('Spiele','🥅',games,'Keine kommenden Spiele vorhanden.')}
+    ${camps.length?renderSection('Trainingslager','🏕️',camps,'Keine kommenden Trainingslager vorhanden.'):''}
+  `;
 }
 
 function requestOwnPlayerStatus(eventId,status){
   if(status!=='absent'){
-    closeModal();
     saveOwnPlayerStatus(eventId,status,'');
     return;
   }
 
-  const existingReason=playerPortalReason(eventId);
+  const existingReason=currentPlayerSchedule?.reasons?.[eventId]||'';
 
   openModal(`
     <h2>Nicht dabei</h2>
