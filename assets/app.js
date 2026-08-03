@@ -1757,6 +1757,7 @@ async function loadPlayerPortal(){
   const profile=payload?.profile||currentPlayerProfile;
   const events=payload?.events||[];
   const statuses=payload?.statuses||{};
+  const reasons=payload?.reasons||{};
 
   document.getElementById('activeTeamLabel').textContent=
     `${TEAM_NAMES[profile.team_key]||'SC Altstadt'} · Spielerportal`;
@@ -1777,11 +1778,12 @@ async function loadPlayerPortal(){
     <h2>Nächste Termine</h2>
     ${events.length?events.map(event=>{
       const status=statuses[event.id]||'present';
+      const reason=reasons[event.id]||'';
       const type=event.type==='training'?'Training':event.type==='game'?'Spiel':'Trainingslager';
       return `<div class="player-portal-event">
         <div>
           <strong>${type} · ${fmtDate(event.date)}</strong>
-          <span>${event.time||''}${event.title?' · '+event.title:''}</span>
+          <span>${event.time||''}${event.title?' · '+event.title:''}${reason?'<br><strong>Grund: '+reason+'</strong>':''}</span>
         </div>
         <div class="player-portal-actions">
           <button class="${status==='present'?'success':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','present')">Dabei</button>
