@@ -356,6 +356,7 @@ function createRecurringTrainings(){
     alert('Bitte Saisonbeginn und Saisonende auswählen.');
     return;
   }
+
   if(selectedCheckboxes.length===0){
     alert('Bitte mindestens einen Trainingstag auswählen.');
     return;
@@ -418,6 +419,7 @@ function createRecurringTrainings(){
     });
 
     data.attendance[id]={};
+
     for(const player of data.players){
       data.attendance[id][player.id]='present';
     }
@@ -427,6 +429,7 @@ function createRecurringTrainings(){
   }
 
   save();
+
   alert(
     `${created} Trainings wurden erstellt.`+
     (skipped?` ${skipped} bereits vorhandene Termine wurden übersprungen.`:'')
@@ -2109,4 +2112,41 @@ function renderAvailabilityView(){
   view.innerHTML=`<div class="card">
     <div class="section-head">
       <div><h2>Verfügbarkeiten</h2><p>Abwesenheitszeiträume des gesamten Kaders</p></div>
-    
+    </div>
+    <div class="availability-toolbar">
+      <div class="field"><label>Spieler</label><select id="availabilityPlayer">${data.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
+      <div class="field"><label>Von</label><input id="availabilityStart" type="date"></div>
+      <div class="field"><label>Bis</label><input id="availabilityEnd" type="date"></div>
+      <div class="field"><label>Grund</label><input id="availabilityReason" placeholder="Ferien, Arbeit, WK, verletzt …"></div>
+      <button class="btn primary" onclick="addAvailability()">Hinzufügen</button>
+    </div>
+    ${rows?`<div style="overflow:auto"><table class="availability-table"><thead><tr><th>Spieler</th><th>Von</th><th>Bis</th><th>Grund</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="availability-empty">Noch keine Abwesenheiten eingetragen.</div>'}
+  </div>`;
+}
+
+function addAvailability(){
+  const playerId=document.getElementById('availabilityPlayer').value;
+  const start=document.getElementById('availabilityStart').value;
+  const end=document.getElementById('availabilityEnd').value;
+  const reason=document.getElementById('availabilityReason').value.trim()||'Abwesend';
+  if(!playerId||!start||!end)return alert('Bitte Spieler, Von und Bis ausfüllen.');
+  if(end<start)return alert('Das Bis-Datum muss nach dem Von-Datum liegen.');
+
+  data.absences ||= [];
+  data.absences.push({id:'absence_'+crypto.randomUUID(),playerId,start,end,reason});
+  applyAllAbsences();
+  save();
+  renderAvailabilityView();
+}
+
+function deleteAvailability(id){
+  data.absences=(data.absences||[]).filter(a=>a.id!==id);
+  recalculateAttendanceFromAbsences();
+  save();
+  renderAvailabilityView();
+}
+
+function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
+renderAll();
+initCloud();
+requestAnimationFrame(initializeSeriesDayTimes);
