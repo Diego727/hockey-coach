@@ -640,6 +640,436 @@ function filterAttendancePlayers(query){
     row.style.display=!normalized||text.includes(normalized)?'grid':'none';
   });
 }
+
+let coachCalendarMonth=new Date().toISOString().slice(0,7);
+let coachCalendarType='training';
+
+function ensureCoachPortalTheme(){
+  if(document.getElementById('coachPortalAltstadtTheme'))return;
+
+  const style=document.createElement('style');
+  style.id='coachPortalAltstadtTheme';
+  style.textContent=`
+    #coachModeApp{
+      background:
+        radial-gradient(circle at 0% 0%,rgba(36,87,68,.08),transparent 25%),
+        linear-gradient(180deg,#f4f8f6 0%,#fbfcfc 100%);
+      color:#25302c;
+      min-height:100vh;
+    }
+
+    #coachModeApp .card,
+    #coachModeApp .dashboard-card,
+    #coachModeApp .event,
+    #coachModeApp details,
+    #coachModeApp .player{
+      border-color:#d8e3de !important;
+      box-shadow:0 10px 26px rgba(23,63,50,.07);
+      background:#fff;
+    }
+
+    #coachModeApp .card,
+    #coachModeApp .dashboard-card{
+      border-radius:20px !important;
+    }
+
+    #coachModeApp h1,
+    #coachModeApp h2,
+    #coachModeApp h3{
+      color:#173f32;
+      letter-spacing:-.02em;
+    }
+
+    #coachModeApp .btn{
+      border-radius:12px !important;
+      font-weight:800;
+      transition:transform .16s ease,box-shadow .16s ease;
+    }
+
+    #coachModeApp .btn:hover{
+      transform:translateY(-1px);
+      box-shadow:0 8px 18px rgba(23,63,50,.12);
+    }
+
+    #coachModeApp .btn.primary{
+      background:linear-gradient(135deg,#245744,#173f32) !important;
+      border-color:#173f32 !important;
+      color:#fff !important;
+    }
+
+    #coachModeApp .btn.soft{
+      background:#fff !important;
+      border-color:#d8e3de !important;
+      color:#173f32 !important;
+    }
+
+    #coachModeApp .btn.ghost{
+      background:#e5f0eb !important;
+      color:#173f32 !important;
+      border-color:transparent !important;
+    }
+
+    #coachModeApp .btn.danger{
+      background:#b52a31 !important;
+      border-color:#b52a31 !important;
+      color:#fff !important;
+    }
+
+    #coachModeApp .tab.active,
+    #coachModeApp .type-switch button.active{
+      background:linear-gradient(135deg,#245744,#173f32) !important;
+      color:#fff !important;
+      border-color:#173f32 !important;
+    }
+
+    #coachModeApp .event.active{
+      border-color:#245744 !important;
+      box-shadow:0 0 0 2px rgba(36,87,68,.13);
+      background:#f2f8f5 !important;
+    }
+
+    #coachModeApp input,
+    #coachModeApp select,
+    #coachModeApp textarea{
+      border-color:#d8e3de !important;
+      border-radius:11px !important;
+    }
+
+    #coachModeApp input:focus,
+    #coachModeApp select:focus,
+    #coachModeApp textarea:focus{
+      outline:none;
+      border-color:#245744 !important;
+      box-shadow:0 0 0 3px rgba(36,87,68,.11);
+    }
+
+    .coach-calendar-shell{
+      min-width:min(920px,92vw);
+      max-width:1100px;
+    }
+
+    .coach-calendar-toolbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-bottom:12px;
+    }
+
+    .coach-calendar-grid{
+      display:grid;
+      grid-template-columns:repeat(7,minmax(0,1fr));
+      gap:6px;
+    }
+
+    .coach-calendar-weekday{
+      text-align:center;
+      font-weight:800;
+      color:#56655f;
+      padding:6px 2px;
+      font-size:12px;
+    }
+
+    .coach-calendar-day{
+      min-height:112px;
+      border:1px solid #d8e3de;
+      border-radius:12px;
+      padding:7px;
+      background:#fff;
+    }
+
+    .coach-calendar-day.empty{
+      background:#f2f5f4;
+      border-color:transparent;
+    }
+
+    .coach-calendar-date{
+      font-weight:900;
+      color:#173f32;
+      font-size:12px;
+    }
+
+    .coach-calendar-entry{
+      margin-top:6px;
+      padding:7px;
+      border-radius:9px;
+      font-size:11px;
+      font-weight:750;
+      line-height:1.25;
+      background:#e5f0eb;
+      color:#173f32;
+      border:1px solid #b8d2c5;
+    }
+
+    .coach-calendar-entry.game{
+      background:#eef1f2;
+      color:#2f3437;
+      border-color:#cfd5d8;
+    }
+
+    @media(max-width:760px){
+      .coach-calendar-shell{
+        min-width:900px;
+      }
+
+      #appModal .modal-content{
+        overflow-x:auto;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function coachCalendarEvents(type=coachCalendarType,month=coachCalendarMonth){
+  return (data.events||[])
+    .filter(event=>event.type===type&&event.date.startsWith(month))
+    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+}
+
+function coachGameLabel(event){
+  const opponent=event.opponent||event.title||'Gegner offen';
+  const where=event.homeAway==='home'
+    ? 'Heim'
+    : event.homeAway==='away'
+      ? 'Auswärts'
+      : 'Ort offen';
+  return `${opponent} · ${where}`;
+}
+
+function openCoachCalendar(type){
+  coachCalendarType=type;
+  const months=[...new Set(
+    (data.events||[])
+      .filter(event=>event.type===type)
+      .map(event=>event.date.slice(0,7))
+  )].sort();
+
+  if(months.length&&!months.includes(coachCalendarMonth)){
+    coachCalendarMonth=months[0];
+  }
+
+  openModal(`
+    <div class="coach-calendar-shell">
+      <div class="coach-calendar-toolbar">
+        <button class="btn soft" onclick="changeCoachCalendarMonth(-1)">‹</button>
+        <div style="text-align:center">
+          <h2 id="coachCalendarTitle" style="margin:0"></h2>
+          <div class="muted">${type==='training'?'Trainingsplan':'Spielplan'}</div>
+        </div>
+        <button class="btn soft" onclick="changeCoachCalendarMonth(1)">›</button>
+      </div>
+
+      <div class="row" style="justify-content:center;margin-bottom:12px">
+        <button class="btn primary" onclick="downloadCoachCalendarPdf()">
+          📄 Monatskalender als PDF herunterladen
+        </button>
+        <button class="btn soft" onclick="downloadPlayerCalendar('${type}')">
+          📅 ICS herunterladen
+        </button>
+      </div>
+
+      <div id="coachCalendarBody"></div>
+    </div>
+  `);
+
+  renderCoachCalendar();
+}
+
+function changeCoachCalendarMonth(offset){
+  const [year,month]=coachCalendarMonth.split('-').map(Number);
+  const next=new Date(year,month-1+offset,1);
+  coachCalendarMonth=[
+    next.getFullYear(),
+    String(next.getMonth()+1).padStart(2,'0')
+  ].join('-');
+  renderCoachCalendar();
+}
+
+function renderCoachCalendar(){
+  const target=document.getElementById('coachCalendarBody');
+  const title=document.getElementById('coachCalendarTitle');
+  if(!target||!title)return;
+
+  const [year,month]=coachCalendarMonth.split('-').map(Number);
+  const firstDay=new Date(year,month-1,1);
+  const lastDay=new Date(year,month,0);
+  const events=coachCalendarEvents();
+
+  title.textContent=new Intl.DateTimeFormat('de-CH',{
+    month:'long',
+    year:'numeric'
+  }).format(firstDay);
+
+  const eventMap={};
+  for(const event of events){
+    eventMap[event.date] ||= [];
+    eventMap[event.date].push(event);
+  }
+
+  const cells=[];
+  const mondayIndex=(firstDay.getDay()+6)%7;
+
+  for(let i=0;i<mondayIndex;i++){
+    cells.push('<div class="coach-calendar-day empty"></div>');
+  }
+
+  for(let day=1;day<=lastDay.getDate();day++){
+    const date=[
+      year,
+      String(month).padStart(2,'0'),
+      String(day).padStart(2,'0')
+    ].join('-');
+
+    const entries=(eventMap[date]||[]).map(event=>`
+      <div class="coach-calendar-entry ${event.type==='game'?'game':''}">
+        <div>${event.time||''}</div>
+        <div>
+          ${event.type==='game'
+            ? coachGameLabel(event)
+            : (event.title||'Training')}
+        </div>
+      </div>
+    `).join('');
+
+    cells.push(`
+      <div class="coach-calendar-day">
+        <div class="coach-calendar-date">${day}</div>
+        ${entries}
+      </div>
+    `);
+  }
+
+  target.innerHTML=`
+    <div class="coach-calendar-grid">
+      ${['Mo','Di','Mi','Do','Fr','Sa','So']
+        .map(day=>`<div class="coach-calendar-weekday">${day}</div>`)
+        .join('')}
+      ${cells.join('')}
+    </div>
+  `;
+}
+
+function downloadCoachCalendarPdf(){
+  const events=coachCalendarEvents();
+
+  if(!events.length){
+    alert('In diesem Monat sind keine Termine vorhanden.');
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const [year,month]=coachCalendarMonth.split('-').map(Number);
+  const firstDay=new Date(year,month-1,1);
+  const lastDay=new Date(year,month,0);
+
+  const pageWidth=doc.internal.pageSize.getWidth();
+  const pageHeight=doc.internal.pageSize.getHeight();
+  const margin=10;
+  const headerHeight=22;
+  const weekdaysHeight=8;
+  const gridTop=margin+headerHeight+weekdaysHeight;
+  const cols=7;
+  const rows=Math.ceil((((firstDay.getDay()+6)%7)+lastDay.getDate())/7);
+  const cellWidth=(pageWidth-margin*2)/cols;
+  const cellHeight=(pageHeight-gridTop-margin)/rows;
+
+  doc.setFillColor(23,63,50);
+  doc.rect(0,0,pageWidth,26,'F');
+
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(17);
+  doc.text(
+    `${teamDisplayName()} – ${coachCalendarType==='training'?'Trainingsplan':'Spielplan'}`,
+    margin,
+    11
+  );
+
+  doc.setFontSize(11);
+  doc.text(
+    new Intl.DateTimeFormat('de-CH',{month:'long',year:'numeric'}).format(firstDay),
+    margin,
+    19
+  );
+
+  doc.setTextColor(37,48,44);
+  doc.setFontSize(9);
+
+  const weekdays=['Mo','Di','Mi','Do','Fr','Sa','So'];
+  weekdays.forEach((label,index)=>{
+    doc.setFont('helvetica','bold');
+    doc.text(
+      label,
+      margin+index*cellWidth+cellWidth/2,
+      margin+headerHeight+5,
+      {align:'center'}
+    );
+  });
+
+  const eventMap={};
+  for(const event of events){
+    eventMap[event.date] ||= [];
+    eventMap[event.date].push(event);
+  }
+
+  const firstIndex=(firstDay.getDay()+6)%7;
+
+  for(let day=1;day<=lastDay.getDate();day++){
+    const index=firstIndex+day-1;
+    const row=Math.floor(index/7);
+    const col=index%7;
+    const x=margin+col*cellWidth;
+    const y=gridTop+row*cellHeight;
+
+    doc.setDrawColor(216,227,222);
+    doc.setFillColor(255,255,255);
+    doc.roundedRect(x,y,cellWidth-1,cellHeight-1,2,2,'FD');
+
+    doc.setTextColor(23,63,50);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.text(String(day),x+3,y+5);
+
+    const date=[
+      year,
+      String(month).padStart(2,'0'),
+      String(day).padStart(2,'0')
+    ].join('-');
+
+    const dayEvents=eventMap[date]||[];
+    let textY=y+11;
+
+    doc.setFontSize(7.3);
+
+    for(const event of dayEvents.slice(0,4)){
+      const label=event.type==='game'
+        ? `${event.time||''} ${coachGameLabel(event)}`
+        : `${event.time||''} ${event.title||'Training'}`;
+
+      const lines=doc.splitTextToSize(safePdfText(label),cellWidth-6);
+
+      doc.setFillColor(
+        event.type==='game'?238:229,
+        event.type==='game'?241:240,
+        event.type==='game'?242:235
+      );
+      doc.roundedRect(x+2,textY-3,cellWidth-5,Math.max(6,lines.length*3.3+2),1.5,1.5,'F');
+
+      doc.setTextColor(event.type==='game'?47:23,event.type==='game'?52:63,event.type==='game'?55:50);
+      doc.setFont('helvetica','normal');
+      doc.text(lines,x+4,textY);
+      textY+=Math.max(7,lines.length*3.3+3);
+
+      if(textY>y+cellHeight-4)break;
+    }
+  }
+
+  doc.save(
+    `${coachCalendarType==='training'?'Trainingsplan':'Spielplan'}_${coachCalendarMonth}.pdf`
+  );
+}
+
 function renderEvents(){
  listTitle.textContent=labels[currentType].plural;
  const list=eventList,sorted=data.events.filter(e=>e.type===currentType).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
@@ -647,6 +1077,10 @@ function renderEvents(){
  const calendarToolbar=currentType==='training'||currentType==='game'
    ? `<div class="row" style="margin:0 0 12px">
         <button class="btn primary"
+                onclick="openCoachCalendar('${currentType}')">
+          📅 Kalenderansicht
+        </button>
+        <button class="btn soft"
                 onclick="openCalendarSubscriptionDialog('${currentType}')">
           🔄 ${currentType==='training'?'Trainings':'Spiele'} abonnieren
         </button>
@@ -3321,6 +3755,7 @@ async function handleCloudSession(session){
   }
 
   document.getElementById('coachModeApp').classList.remove('hidden');
+  ensureCoachPortalTheme();
   document.getElementById('playerPilotApp').classList.add('hidden');
   await loadCloudState({initial:true});
   
