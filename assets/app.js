@@ -2137,6 +2137,111 @@ function downloadPlayerCalendar(type){
   URL.revokeObjectURL(link.href);
 }
 
+
+function openCalendarHelp(){
+  openModal(`
+    <h2>Hilfe zum Kalenderexport</h2>
+
+    <div class="stack">
+      <div style="
+        padding:12px;
+        border-radius:12px;
+        background:#f4f8fc;
+        border:1px solid var(--line);
+      ">
+        <strong>Was ist der Mehrwert?</strong>
+        <p style="margin-bottom:0">
+          Du kannst Trainings und Spiele zusätzlich in deinem privaten Kalender
+          anzeigen lassen. So siehst du die Termine zusammen mit Arbeit,
+          Familie und anderen persönlichen Terminen.
+        </p>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom:5px">1. Einmaliger Download</h3>
+        <p class="muted">
+          Beim ICS-Download wird der aktuelle Trainings- oder Spielplan einmalig
+          übernommen. Spätere Änderungen werden dabei nicht automatisch aktualisiert.
+        </p>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom:5px">2. Live-Kalender abonnieren</h3>
+        <p class="muted">
+          Bei einem Abonnement bleibt derselbe Kalenderlink gespeichert.
+          Neue Termine und spätere Änderungen können dadurch automatisch
+          in deinem privaten Kalender erscheinen.
+        </p>
+      </div>
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+        gap:10px;
+      ">
+        <div style="padding:12px;border:1px solid var(--line);border-radius:12px">
+          <strong>🍎 iPhone / iPad</strong>
+          <p class="muted" style="margin-bottom:0">
+            Kalender abonnieren antippen und anschliessend in Apple Kalender
+            auf «Abonnieren» bestätigen.
+          </p>
+        </div>
+
+        <div style="padding:12px;border:1px solid var(--line);border-radius:12px">
+          <strong>🤖 Android / Google</strong>
+          <p class="muted" style="margin-bottom:0">
+            Den Live-Link kopieren und in Google Kalender über
+            «Weitere Kalender → Per URL» hinzufügen.
+          </p>
+        </div>
+
+        <div style="padding:12px;border:1px solid var(--line);border-radius:12px">
+          <strong>💻 Windows / Outlook</strong>
+          <p class="muted" style="margin-bottom:0">
+            In Outlook «Kalender hinzufügen → Aus dem Web abonnieren»
+            wählen und den Live-Link einfügen.
+          </p>
+        </div>
+      </div>
+
+      <div style="
+        padding:12px;
+        border-radius:12px;
+        background:#fff8e6;
+        border:1px solid #ead59b;
+      ">
+        <strong>Wichtig</strong>
+        <p style="margin-bottom:0">
+          Kalender-Apps aktualisieren externe Abos in eigenen Intervallen.
+          Änderungen können deshalb mit etwas Verzögerung erscheinen.
+        </p>
+      </div>
+
+      <button class="btn primary" onclick="closeModal()">Verstanden</button>
+    </div>
+  `);
+}
+
+function playerPortalEventStatus(eventId){
+  return currentPlayerSchedule?.statuses?.[eventId]||'present';
+}
+
+function playerPortalEventReason(eventId){
+  return currentPlayerSchedule?.reasons?.[eventId]||'';
+}
+
+function playerPortalStatusPresentation(status){
+  if(status==='present'){
+    return {label:'Dabei',background:'#e8f7ee',color:'#13733f',border:'#7ac99b'};
+  }
+
+  if(status==='absent'){
+    return {label:'Nicht dabei',background:'#fdeaea',color:'#a12727',border:'#e59a9a'};
+  }
+
+  return {label:'Unsicher',background:'#fff4cc',color:'#8a6500',border:'#e2c65f'};
+}
+
 let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
 
@@ -2166,6 +2271,10 @@ async function loadPlayerPortal(){
   currentPlayerSchedule=payload;
 
   const profile=payload?.profile||currentPlayerProfile;
+  const events=(payload?.events||[]).sort((a,b)=>
+    (a.date+(a.time||'')).localeCompare(b.date+(b.time||''))
+  );
+
   const teamName=TEAM_NAMES[profile.team_key]||'SC Altstadt';
   const teamLogo=profile.team_key==='second'
     ? (cloudRoot.teams?.second?.settings?.logo||defaultLogoData('2'))
@@ -2179,6 +2288,79 @@ async function loadPlayerPortal(){
 
   setCloudStatus('Synchronisiert','ok');
 
+  const nextTraining=events.find(event=>event.type==='training')||null;
+  const nextGame=events.find(event=>event.type==='game')||null;
+
+  function dashboardCard(event,title,icon){
+    if(!event){
+      return `
+        <div style="
+          border:1px solid var(--line);
+          border-radius:16px;
+          padding:16px;
+          background:#fff;
+        ">
+          <div style="font-size:22px">${icon}</div>
+          <h3 style="margin:7px 0">${title}</h3>
+          <div class="muted">Kein kommender Termin vorhanden.</div>
+        </div>`;
+    }
+
+    const status=playerPortalEventStatus(event.id);
+    const presentation=playerPortalStatusPresentation(status);
+    const reason=playerPortalEventReason(event.id);
+
+    return `
+      <button
+        onclick="openPlayerPortalEvent('${event.id}')"
+        style="
+          width:100%;
+          text-align:left;
+          border:1px solid var(--line);
+          border-radius:16px;
+          padding:16px;
+          background:#fff;
+          cursor:pointer;
+          box-shadow:0 8px 24px rgba(16,36,63,.06);
+        ">
+        <div style="display:flex;justify-content:space-between;gap:10px">
+          <div>
+            <div style="font-size:22px">${icon}</div>
+            <h3 style="margin:7px 0 4px">${title}</h3>
+            <strong>${fmtDate(event.date)} · ${event.time||''}</strong>
+            ${event.title?`<div class="muted">${event.title}</div>`:''}
+          </div>
+
+          <span style="
+            align-self:flex-start;
+            padding:6px 10px;
+            border-radius:999px;
+            background:${presentation.background};
+            color:${presentation.color};
+            border:1px solid ${presentation.border};
+            font-size:12px;
+            font-weight:800;
+            white-space:nowrap;
+          ">
+            ${presentation.label}
+          </span>
+        </div>
+
+        ${reason?`
+          <div style="
+            margin-top:10px;
+            padding:8px 10px;
+            border-radius:10px;
+            background:#fdeaea;
+            color:#922;
+            font-size:13px;
+          ">
+            <strong>Grund:</strong> ${reason}
+          </div>
+        `:''}
+      </button>`;
+  }
+
   app.innerHTML=`
     <div class="player-portal-card">
       <div class="player-portal-head">
@@ -2187,22 +2369,35 @@ async function loadPlayerPortal(){
             src="${teamLogo}"
             alt="Teamlogo"
             style="
-              width:60px;
-              height:60px;
+              width:64px;
+              height:64px;
               object-fit:contain;
-              border-radius:14px;
+              border-radius:16px;
               border:1px solid var(--line);
               background:#fff;
               padding:5px;
             ">
           <div>
-            <h2 style="margin:0">Hallo ${profile.display_name}</h2>
+            <h2 style="margin:0">Hallo ${profile.display_name} 👋</h2>
             <div class="muted">${teamName}</div>
             <div class="player-email">${cloudUser.email||''}</div>
           </div>
         </div>
-        <span class="player-role-badge">Spielerzugang</span>
+
+        <button class="btn soft" onclick="openCalendarHelp()">
+          ❓ Hilfe Kalenderexport
+        </button>
       </div>
+    </div>
+
+    <div style="
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+      gap:14px;
+      margin-bottom:14px;
+    ">
+      ${dashboardCard(nextTraining,'Nächstes Training','🏒')}
+      ${dashboardCard(nextGame,'Nächstes Spiel','🥅')}
     </div>
 
     <div class="player-portal-card">
@@ -2229,27 +2424,22 @@ async function loadPlayerPortal(){
 
       <div style="
         display:grid;
-        grid-template-columns:1fr 1fr;
+        grid-template-columns:1fr auto;
         gap:10px;
         margin-bottom:14px;
       ">
-        <button class="btn soft" onclick="downloadPlayerCalendar('training')">
-          📅 Trainingsplan herunterladen
-        </button>
-        <button class="btn soft" onclick="downloadPlayerCalendar('game')">
-          📅 Spielplan herunterladen
-        </button>
-      </div>
-
-      <div style="margin-bottom:14px">
         <button
           id="playerPortalAutoCalendarBtn"
           class="btn primary"
-          style="width:100%;padding:14px;font-size:15px"
+          style="padding:13px;font-size:15px"
           onclick="addCurrentPlayerCalendarToDevice()">
           📲 ${playerPortalType==='training'
             ? 'Trainings zu meinem Kalender hinzufügen'
             : 'Spiele zu meinem Kalender hinzufügen'}
+        </button>
+
+        <button class="btn soft" onclick="openCalendarHelp()">
+          Hilfe
         </button>
       </div>
 
@@ -2288,301 +2478,6 @@ async function loadPlayerPortal(){
   `;
 
   renderPlayerPortalCalendar();
-}
-
-function setPlayerPortalType(type){
-  playerPortalType=type;
-  document.getElementById('playerPortalTrainingBtn').className=
-    'btn '+(type==='training'?'primary':'soft');
-  document.getElementById('playerPortalGameBtn').className=
-    'btn '+(type==='game'?'primary':'soft');
-
-  const autoButton=document.getElementById('playerPortalAutoCalendarBtn');
-  if(autoButton){
-    autoButton.textContent=type==='training'
-      ? '📲 Trainings zu meinem Kalender hinzufügen'
-      : '📲 Spiele zu meinem Kalender hinzufügen';
-  }
-
-  renderPlayerPortalCalendar();
-}
-
-function changePlayerPortalMonth(offset){
-  const [year,month]=playerPortalMonth.split('-').map(Number);
-  const next=new Date(year,month-1+offset,1);
-  playerPortalMonth=[
-    next.getFullYear(),
-    String(next.getMonth()+1).padStart(2,'0')
-  ].join('-');
-  renderPlayerPortalCalendar();
-}
-
-function playerPortalStatus(eventId){
-  return currentPlayerSchedule?.statuses?.[eventId]||'present';
-}
-
-function playerPortalReason(eventId){
-  return currentPlayerSchedule?.reasons?.[eventId]||'';
-}
-
-function playerPortalStatusStyle(status){
-  if(status==='present'){
-    return {
-      background:'#e8f7ee',
-      border:'#7ac99b',
-      color:'#13733f',
-      label:'Dabei'
-    };
-  }
-
-  if(status==='absent'){
-    return {
-      background:'#fdeaea',
-      border:'#e59a9a',
-      color:'#a12727',
-      label:'Nicht dabei'
-    };
-  }
-
-  return {
-    background:'#fff4cc',
-    border:'#e2c65f',
-    color:'#8a6500',
-    label:'Unsicher'
-  };
-}
-
-function renderPlayerPortalCalendar(){
-  const target=document.getElementById('playerPortalCalendar');
-  const title=document.getElementById('playerPortalMonthTitle');
-  if(!target||!title||!currentPlayerSchedule)return;
-
-  const [year,month]=playerPortalMonth.split('-').map(Number);
-  const firstDay=new Date(year,month-1,1);
-  const lastDay=new Date(year,month,0);
-
-  title.textContent=new Intl.DateTimeFormat('de-CH',{
-    month:'long',
-    year:'numeric'
-  }).format(firstDay);
-
-  const events=(currentPlayerSchedule.events||[])
-    .filter(event=>
-      event.type===playerPortalType &&
-      event.date.startsWith(playerPortalMonth)
-    )
-    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
-
-  const eventMap={};
-  for(const event of events){
-    eventMap[event.date] ||= [];
-    eventMap[event.date].push(event);
-  }
-
-  const mondayIndex=(firstDay.getDay()+6)%7;
-  const cells=[];
-
-  for(let i=0;i<mondayIndex;i++){
-    cells.push('<div style="min-height:92px;background:#f7f9fb;border-radius:10px"></div>');
-  }
-
-  for(let day=1;day<=lastDay.getDate();day++){
-    const date=[
-      year,
-      String(month).padStart(2,'0'),
-      String(day).padStart(2,'0')
-    ].join('-');
-
-    const dayEvents=eventMap[date]||[];
-
-    const items=dayEvents.map(event=>{
-      const status=playerPortalStatus(event.id);
-      const style=playerPortalStatusStyle(status);
-      const reason=playerPortalReason(event.id);
-
-      return `
-        <button
-          onclick="openPlayerPortalEvent('${event.id}')"
-          style="
-            width:100%;
-            text-align:left;
-            border:1px solid ${style.border};
-            background:${style.background};
-            color:${style.color};
-            border-radius:8px;
-            padding:7px;
-            margin-top:5px;
-            font-size:11px;
-            font-weight:750;
-            cursor:pointer;
-          ">
-          <div>
-            ${event.time||''}
-            ${event.type==='game'
-              ? ` · ${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
-              : (event.title?' · '+event.title:'')}
-          </div>
-          <div style="font-size:10px;margin-top:2px">${style.label}</div>
-          ${reason?`<div style="font-size:10px;margin-top:2px">Grund: ${reason}</div>`:''}
-        </button>
-      `;
-    }).join('');
-
-    cells.push(`
-      <div style="
-        min-height:92px;
-        border:1px solid var(--line);
-        border-radius:10px;
-        padding:6px;
-        background:#fff;
-      ">
-        <div style="font-weight:800;font-size:12px">${day}</div>
-        ${items}
-      </div>
-    `);
-  }
-
-  target.innerHTML=`
-    <div style="
-      display:grid;
-      grid-template-columns:repeat(7,minmax(0,1fr));
-      gap:5px;
-      font-size:11px;
-      margin-bottom:6px;
-      text-align:center;
-      font-weight:750;
-      color:#586579;
-    ">
-      <div>Mo</div>
-      <div>Di</div>
-      <div>Mi</div>
-      <div>Do</div>
-      <div>Fr</div>
-      <div>Sa</div>
-      <div>So</div>
-    </div>
-
-    <div style="
-      display:grid;
-      grid-template-columns:repeat(7,minmax(0,1fr));
-      gap:5px;
-      overflow-x:auto;
-    ">
-      ${cells.join('')}
-    </div>
-
-    ${events.length?'':`
-      <p class="muted" style="margin-top:14px">
-        In diesem Monat sind keine ${playerPortalType==='training'?'Trainings':'Spiele'} eingetragen.
-      </p>
-    `}
-  `;
-}
-
-function openPlayerPortalEvent(eventId){
-  const event=(currentPlayerSchedule?.events||[]).find(item=>item.id===eventId);
-  if(!event)return;
-
-  const status=playerPortalStatus(eventId);
-  const reason=playerPortalReason(eventId);
-  const typeLabel=event.type==='training'?'Training':'Spiel';
-
-  openModal(`
-    <h2>${typeLabel}</h2>
-    <div class="stack">
-      <div>
-        <strong>${fmtDate(event.date)} · ${event.time||''}</strong>
-        ${event.type==='game'
-          ? `<div class="muted">Gegner: ${gameOpponent(event)} · ${gameHomeAwayLabel(event)}</div>`
-          : (event.title?`<div class="muted">${event.title}</div>`:'')}
-      </div>
-
-      ${reason?`
-        <div style="
-          padding:10px;
-          border-radius:10px;
-          background:#fdeaea;
-          color:#922;
-        ">
-          <strong>Abwesenheitsgrund:</strong> ${reason}
-        </div>
-      `:''}
-
-      <div class="row">
-        <button
-          class="btn ${status==='present'?'success':'soft'}"
-          onclick="requestOwnPlayerStatus('${event.id}','present')">
-          Dabei
-        </button>
-
-        <button
-          class="btn ${status==='absent'?'danger':'soft'}"
-          onclick="requestOwnPlayerStatus('${event.id}','absent')">
-          Nicht dabei
-        </button>
-
-        <button
-          class="btn ${status==='open'?'on-unknown':'soft'}"
-          onclick="requestOwnPlayerStatus('${event.id}','open')">
-          Unsicher
-        </button>
-      </div>
-    </div>
-  `);
-}
-
-function requestOwnPlayerStatus(eventId,status){
-  if(status!=='absent'){
-    closeModal();
-    saveOwnPlayerStatus(eventId,status,'');
-    return;
-  }
-
-  const existingReason=playerPortalReason(eventId);
-
-  openModal(`
-    <h2>Nicht dabei</h2>
-    <div class="stack">
-      <p>Bitte gib den Grund für deine Abwesenheit an.</p>
-
-      <div class="field">
-        <label>Abwesenheitsgrund</label>
-        <input
-          id="ownAbsenceReason"
-          value="${existingReason}"
-          placeholder="z. B. Ferien, Arbeit, verletzt, krank">
-      </div>
-
-      <div class="row">
-        <button class="btn danger" onclick="confirmOwnAbsence('${eventId}')">
-          Nicht dabei speichern
-        </button>
-        <button class="btn ghost" onclick="closeModal()">
-          Abbrechen
-        </button>
-      </div>
-    </div>
-  `);
-
-  requestAnimationFrame(()=>{
-    const input=document.getElementById('ownAbsenceReason');
-    if(input){
-      input.focus();
-      input.select();
-    }
-  });
-}
-
-function confirmOwnAbsence(eventId){
-  const reason=document.getElementById('ownAbsenceReason')?.value.trim()||'';
-
-  if(!reason){
-    alert('Bitte einen Abwesenheitsgrund eingeben.');
-    return;
-  }
-
-  closeModal();
-  saveOwnPlayerStatus(eventId,'absent',reason);
 }
 
 async function saveOwnPlayerStatus(eventId,status,reason=''){
