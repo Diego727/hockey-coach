@@ -310,19 +310,53 @@ function addEvent(){
  applyAbsencesToEvent(data.events.find(e=>e.id===id));selectedId=id;newTitle.value='';save()
 }
 
+function initializeSeriesDayTimes(){
+  const checkboxes=[...document.querySelectorAll('.seriesDay')];
+  if(!checkboxes.length)return;
+
+  const sharedTime=document.getElementById('seriesTime');
+  const defaultTime=sharedTime?.value||'20:00';
+
+  if(sharedTime){
+    const wrapper=sharedTime.closest('.field')||sharedTime.parentElement;
+    if(wrapper)wrapper.style.display='none';
+  }
+
+  for(const checkbox of checkboxes){
+    const day=Number(checkbox.value);
+    const holder=checkbox.closest('.weekday-option')||checkbox.parentElement;
+    if(!holder||holder.querySelector('.series-day-time'))continue;
+
+    const timeInput=document.createElement('input');
+    timeInput.type='time';
+    timeInput.className='series-day-time';
+    timeInput.dataset.day=String(day);
+    timeInput.value=defaultTime;
+    timeInput.disabled=!checkbox.checked;
+    timeInput.style.width='105px';
+    timeInput.style.marginLeft='6px';
+
+    checkbox.addEventListener('change',()=>{
+      timeInput.disabled=!checkbox.checked;
+      if(checkbox.checked&&!timeInput.value)timeInput.value=defaultTime;
+    });
+
+    holder.appendChild(timeInput);
+  }
+}
+
 function createRecurringTrainings(){
   if(currentType!=='training')return;
 
   const startValue=document.getElementById('seriesStart').value;
   const endValue=document.getElementById('seriesEnd').value;
-  const time=document.getElementById('seriesTime').value||'20:00';
-  const selectedDays=[...document.querySelectorAll('.seriesDay:checked')].map(input=>Number(input.value));
+  const selectedCheckboxes=[...document.querySelectorAll('.seriesDay:checked')];
 
   if(!startValue||!endValue){
     alert('Bitte Saisonbeginn und Saisonende auswählen.');
     return;
   }
-  if(selectedDays.length===0){
+  if(selectedCheckboxes.length===0){
     alert('Bitte mindestens einen Trainingstag auswählen.');
     return;
   }
@@ -335,12 +369,24 @@ function createRecurringTrainings(){
     return;
   }
 
+  const weekdayConfigs=selectedCheckboxes.map(checkbox=>{
+    const day=Number(checkbox.value);
+    const timeInput=document.querySelector(`.series-day-time[data-day="${day}"]`);
+    const time=timeInput?.value||document.getElementById('seriesTime')?.value||'20:00';
+
+    return {
+      day,
+      time,
+      seriesId:`series_day_${day}_${crypto.randomUUID()}`
+    };
+  });
+
   let created=0;
   let skipped=0;
-  const seriesId='series_'+crypto.randomUUID();
 
   for(let date=new Date(start);date<=end;date.setDate(date.getDate()+1)){
-    if(!selectedDays.includes(date.getDay()))continue;
+    const config=weekdayConfigs.find(item=>item.day===date.getDay());
+    if(!config)continue;
 
     const dateString=[
       date.getFullYear(),
@@ -351,7 +397,7 @@ function createRecurringTrainings(){
     const duplicate=data.events.some(event=>
       event.type==='training' &&
       event.date===dateString &&
-      event.time===time
+      event.time===config.time
     );
 
     if(duplicate){
@@ -359,21 +405,25 @@ function createRecurringTrainings(){
       continue;
     }
 
-    const id='training_'+dateString+'_'+time+'_'+crypto.randomUUID();
+    const id='training_'+dateString+'_'+config.time+'_'+crypto.randomUUID();
+
     data.events.push({
       id,
       type:'training',
       date:dateString,
-      time,
+      time:config.time,
       title:'',
-      seriesId
+      seriesId:config.seriesId,
+      seriesWeekday:config.day
     });
 
     data.attendance[id]={};
     for(const player of data.players){
       data.attendance[id][player.id]='present';
     }
-    applyAbsencesToEvent(data.events[data.events.length-1]);created++;
+
+    applyAbsencesToEvent(data.events[data.events.length-1]);
+    created++;
   }
 
   save();
@@ -609,15 +659,24 @@ function renderSelected(){
 }
 
 
+function eventWeekday(event){
+  return new Date(event.date+'T12:00:00').getDay();
+}
+
 function seriesCandidatesForEvent(event){
+  const weekday=event.seriesWeekday??eventWeekday(event);
+
   if(event.seriesId){
-    return data.events.filter(item=>item.seriesId===event.seriesId);
+    return data.events.filter(item=>
+      item.type==='training' &&
+      item.seriesId===event.seriesId &&
+      (item.seriesWeekday??eventWeekday(item))===weekday
+    );
   }
 
-  // Bereits bestehende Trainings ohne Serien-ID werden anhand
-  // der bisherigen Uhrzeit und Bezeichnung zusammengefasst.
   return data.events.filter(item=>
     item.type==='training' &&
+    (item.seriesWeekday??eventWeekday(item))===weekday &&
     (item.time||'')===(event.time||'') &&
     (item.title||'')===(event.title||'')
   );
@@ -630,9 +689,11 @@ function openEventSeriesEditor(eventId){
   const candidates=seriesCandidatesForEvent(event)
     .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
   const hasSeries=candidates.length>1;
+  const weekdayName=new Intl.DateTimeFormat('de-CH',{weekday:'long'})
+    .format(new Date(event.date+'T12:00:00'));
 
   openModal(`
-    <h2>Training bearbeiten</h2>
+    <h2>${weekdayName}-Training bearbeiten</h2>
     <div class="stack">
       <div class="field">
         <label>Datum</label>
@@ -654,8 +715,8 @@ function openEventSeriesEditor(eventId){
         <select id="editEventScope">
           <option value="single">Nur dieses Training</option>
           ${hasSeries?`
-            <option value="future">Dieses und alle zukünftigen Trainings</option>
-            <option value="all">Die gesamte Serie (${candidates.length} Trainings)</option>
+            <option value="future">Dieses und alle zukünftigen ${weekdayName}-Trainings</option>
+            <option value="all">Alle ${weekdayName}-Trainings (${candidates.length})</option>
           `:''}
         </select>
       </div>
@@ -712,6 +773,7 @@ function saveEventSeriesEdit(eventId){
       item.seriesId=sharedSeriesId;
     }
 
+    item.seriesWeekday=event.seriesWeekday??eventWeekday(event);
     applyAbsencesToEvent(item);
   }
 
@@ -2047,40 +2109,4 @@ function renderAvailabilityView(){
   view.innerHTML=`<div class="card">
     <div class="section-head">
       <div><h2>Verfügbarkeiten</h2><p>Abwesenheitszeiträume des gesamten Kaders</p></div>
-    </div>
-    <div class="availability-toolbar">
-      <div class="field"><label>Spieler</label><select id="availabilityPlayer">${data.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
-      <div class="field"><label>Von</label><input id="availabilityStart" type="date"></div>
-      <div class="field"><label>Bis</label><input id="availabilityEnd" type="date"></div>
-      <div class="field"><label>Grund</label><input id="availabilityReason" placeholder="Ferien, Arbeit, WK, verletzt …"></div>
-      <button class="btn primary" onclick="addAvailability()">Hinzufügen</button>
-    </div>
-    ${rows?`<div style="overflow:auto"><table class="availability-table"><thead><tr><th>Spieler</th><th>Von</th><th>Bis</th><th>Grund</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="availability-empty">Noch keine Abwesenheiten eingetragen.</div>'}
-  </div>`;
-}
-
-function addAvailability(){
-  const playerId=document.getElementById('availabilityPlayer').value;
-  const start=document.getElementById('availabilityStart').value;
-  const end=document.getElementById('availabilityEnd').value;
-  const reason=document.getElementById('availabilityReason').value.trim()||'Abwesend';
-  if(!playerId||!start||!end)return alert('Bitte Spieler, Von und Bis ausfüllen.');
-  if(end<start)return alert('Das Bis-Datum muss nach dem Von-Datum liegen.');
-
-  data.absences ||= [];
-  data.absences.push({id:'absence_'+crypto.randomUUID(),playerId,start,end,reason});
-  applyAllAbsences();
-  save();
-  renderAvailabilityView();
-}
-
-function deleteAvailability(id){
-  data.absences=(data.absences||[]).filter(a=>a.id!==id);
-  recalculateAttendanceFromAbsences();
-  save();
-  renderAvailabilityView();
-}
-
-function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
-renderAll();
-initCloud();
+    
