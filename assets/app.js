@@ -2138,6 +2138,186 @@ function downloadPlayerCalendar(type){
 }
 
 
+
+function ensurePlayerPortalTheme(){
+  if(document.getElementById('playerPortalAltstadtTheme'))return;
+
+  const style=document.createElement('style');
+  style.id='playerPortalAltstadtTheme';
+  style.textContent=`
+    :root{
+      --altstadt-navy:#0b1f36;
+      --altstadt-navy-2:#153a63;
+      --altstadt-red:#d3262f;
+      --altstadt-red-dark:#a9161e;
+      --altstadt-white:#ffffff;
+      --altstadt-ice:#f3f7fb;
+      --altstadt-line:#dbe5ef;
+      --altstadt-text:#152235;
+      --altstadt-muted:#6f7d8d;
+      --altstadt-shadow:0 14px 34px rgba(11,31,54,.12);
+    }
+
+    #playerPilotApp.player-portal{
+      max-width:1500px;
+      margin:0 auto;
+      padding:20px;
+      background:
+        radial-gradient(circle at top right,rgba(211,38,47,.08),transparent 28%),
+        linear-gradient(180deg,#eef4f9 0%,#f8fafc 100%);
+      min-height:100vh;
+      color:var(--altstadt-text);
+    }
+
+    #playerPilotApp .player-portal-card{
+      border:1px solid rgba(11,31,54,.08);
+      border-radius:22px;
+      background:rgba(255,255,255,.96);
+      box-shadow:var(--altstadt-shadow);
+      padding:20px;
+      margin-bottom:18px;
+      overflow:hidden;
+      position:relative;
+    }
+
+    #playerPilotApp .player-portal-card::before{
+      content:"";
+      position:absolute;
+      inset:0 auto 0 0;
+      width:5px;
+      background:linear-gradient(180deg,var(--altstadt-red),var(--altstadt-red-dark));
+    }
+
+    #playerPilotApp .player-portal-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:16px;
+      flex-wrap:wrap;
+    }
+
+    #playerPilotApp h2,
+    #playerPilotApp h3{
+      color:var(--altstadt-navy);
+      letter-spacing:-.02em;
+    }
+
+    #playerPilotApp .muted{
+      color:var(--altstadt-muted);
+    }
+
+    #playerPilotApp .player-role-badge{
+      background:var(--altstadt-navy);
+      color:#fff;
+      border-radius:999px;
+      padding:7px 11px;
+      font-weight:800;
+      font-size:12px;
+      letter-spacing:.02em;
+    }
+
+    #playerPilotApp .btn{
+      border-radius:12px;
+      min-height:42px;
+      font-weight:800;
+      transition:transform .16s ease,box-shadow .16s ease,background .16s ease;
+    }
+
+    #playerPilotApp .btn:hover{
+      transform:translateY(-1px);
+      box-shadow:0 8px 18px rgba(11,31,54,.12);
+    }
+
+    #playerPilotApp .btn.primary{
+      background:linear-gradient(135deg,var(--altstadt-navy-2),var(--altstadt-navy));
+      border-color:var(--altstadt-navy);
+      color:#fff;
+    }
+
+    #playerPilotApp .btn.soft{
+      background:#fff;
+      color:var(--altstadt-navy);
+      border:1px solid var(--altstadt-line);
+    }
+
+    #playerPilotApp .btn.danger{
+      background:linear-gradient(135deg,var(--altstadt-red),var(--altstadt-red-dark));
+      color:#fff;
+      border-color:var(--altstadt-red);
+    }
+
+    #playerPilotApp #playerPortalTrainingBtn,
+    #playerPilotApp #playerPortalGameBtn{
+      min-height:54px;
+      font-size:15px;
+    }
+
+    #playerPilotApp #playerPortalTrainingBtn.primary,
+    #playerPilotApp #playerPortalGameBtn.primary{
+      position:relative;
+    }
+
+    #playerPilotApp #playerPortalTrainingBtn.primary::after,
+    #playerPilotApp #playerPortalGameBtn.primary::after{
+      content:"";
+      position:absolute;
+      left:18px;
+      right:18px;
+      bottom:7px;
+      height:3px;
+      background:var(--altstadt-red);
+      border-radius:999px;
+    }
+
+    #playerPilotApp #playerPortalCalendar{
+      border-radius:18px;
+      padding:10px;
+      background:linear-gradient(180deg,#f7fafc,#f0f5f9);
+      border:1px solid var(--altstadt-line);
+    }
+
+    #playerPilotApp #playerPortalCalendar button{
+      transition:transform .14s ease,box-shadow .14s ease;
+    }
+
+    #playerPilotApp #playerPortalCalendar button:hover{
+      transform:translateY(-1px);
+      box-shadow:0 6px 14px rgba(11,31,54,.1);
+    }
+
+    #playerPilotApp .player-email{
+      color:var(--altstadt-red-dark);
+      font-weight:700;
+      font-size:12px;
+      margin-top:2px;
+    }
+
+    #playerPilotApp img[alt="Teamlogo"]{
+      box-shadow:0 8px 18px rgba(11,31,54,.12);
+    }
+
+    @media(max-width:720px){
+      #playerPilotApp.player-portal{
+        padding:12px;
+      }
+
+      #playerPilotApp .player-portal-card{
+        border-radius:18px;
+        padding:16px;
+      }
+
+      #playerPilotApp .player-portal-head{
+        align-items:flex-start;
+      }
+
+      #playerPilotApp #playerPortalCalendar{
+        overflow-x:auto;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function openCalendarHelp(){
   openModal(`
     <h2>Hilfe zum Kalenderexport</h2>
@@ -2246,6 +2426,7 @@ let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
 
 async function loadPlayerPortal(){
+  ensurePlayerPortalTheme();
   const app=document.getElementById('playerPilotApp');
   const coach=document.getElementById('coachModeApp');
 
@@ -2362,8 +2543,22 @@ async function loadPlayerPortal(){
   }
 
   app.innerHTML=`
-    <div class="player-portal-card">
-      <div class="player-portal-head">
+    <div class="player-portal-card" style="
+      background:
+        linear-gradient(135deg,rgba(11,31,54,.98),rgba(21,58,99,.96));
+      color:#fff;
+      border:none;
+    ">
+      <div style="
+        position:absolute;
+        right:-40px;
+        top:-60px;
+        width:180px;
+        height:180px;
+        border-radius:50%;
+        background:rgba(211,38,47,.22);
+      "></div>
+      <div class="player-portal-head" style="position:relative;z-index:1">
         <div style="display:flex;align-items:center;gap:12px">
           <img
             src="${teamLogo}"
@@ -2378,13 +2573,17 @@ async function loadPlayerPortal(){
               padding:5px;
             ">
           <div>
-            <h2 style="margin:0">Hallo ${profile.display_name} 👋</h2>
-            <div class="muted">${teamName}</div>
+            <h2 style="margin:0;color:#fff">Hallo ${profile.display_name} 👋</h2>
+            <div style="color:rgba(255,255,255,.78)">${teamName}</div>
             <div class="player-email">${cloudUser.email||''}</div>
           </div>
         </div>
 
-        <button class="btn soft" onclick="openCalendarHelp()">
+        <button class="btn soft" style="
+          background:rgba(255,255,255,.12);
+          color:#fff;
+          border-color:rgba(255,255,255,.22);
+        " onclick="openCalendarHelp()">
           ❓ Hilfe Kalenderexport
         </button>
       </div>
