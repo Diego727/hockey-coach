@@ -1748,63 +1748,241 @@ async function loadPlayerPortal(){
   document.getElementById('settingsBtn').style.display='none';
 
   const {data:payload,error}=await cloudClient.rpc('get_my_player_schedule');
+
   if(error){
-    app.innerHTML=`<div class="player-portal-card"><h2>Spielerportal</h2><p class="danger">Daten konnten nicht geladen werden: ${error.message}</p></div>`;
+    app.innerHTML=`
+      <div class="player-portal-card">
+        <h2>Spielerportal</h2>
+        <p class="danger">Daten konnten nicht geladen werden: ${error.message}</p>
+      </div>`;
     return;
   }
 
   currentPlayerSchedule=payload;
+
   const profile=payload?.profile||currentPlayerProfile;
   const events=payload?.events||[];
   const statuses=payload?.statuses||{};
   const reasons=payload?.reasons||{};
 
+  const teamName=TEAM_NAMES[profile.team_key]||'SC Altstadt';
+  const teamLogo=profile.team_key==='second'
+    ? (cloudRoot.teams?.second?.settings?.logo||defaultLogoData('2'))
+    : (cloudRoot.teams?.third?.settings?.logo||defaultLogoData('3'));
+
   document.getElementById('activeTeamLabel').textContent=
-    `${TEAM_NAMES[profile.team_key]||'SC Altstadt'} · Spielerportal`;
+    `${teamName} · Spielerportal`;
+
+  const headerLogo=document.getElementById('headerTeamLogo');
+  if(headerLogo)headerLogo.src=teamLogo;
+
   setCloudStatus('Synchronisiert','ok');
 
-  app.innerHTML=`<div class="player-portal-card">
-    <div class="player-portal-head">
-      <div>
-        <h2 style="margin:0">Hallo ${profile.display_name}</h2>
-        <div class="muted">${TEAM_NAMES[profile.team_key]||'SC Altstadt'}</div>
-        <div class="player-email">${cloudUser.email||''}</div>
-      </div>
-      <span class="player-role-badge">Spielerzugang</span>
-    </div>
-    <p>Du kannst nur deine eigene Teilnahme ändern.</p>
-  </div>
-  <div class="player-portal-card">
-    <h2>Nächste Termine</h2>
-    ${events.length?events.map(event=>{
-      const status=statuses[event.id]||'present';
-      const reason=reasons[event.id]||'';
-      const type=event.type==='training'?'Training':event.type==='game'?'Spiel':'Trainingslager';
-      return `<div class="player-portal-event">
-        <div>
-          <strong>${type} · ${fmtDate(event.date)}</strong>
-          <span>${event.time||''}${event.title?' · '+event.title:''}${reason?'<br><strong>Grund: '+reason+'</strong>':''}</span>
+  const sortedEvents=[...events].sort((a,b)=>
+    (a.date+(a.time||'')).localeCompare(b.date+(b.time||''))
+  );
+
+  const trainings=sortedEvents.filter(event=>event.type==='training');
+  const games=sortedEvents.filter(event=>event.type==='game');
+  const camps=sortedEvents.filter(event=>event.type==='camp');
+  const nextEvent=sortedEvents[0]||null;
+
+  function statusText(status){
+    if(status==='present')return 'Dabei';
+    if(status==='absent')return 'Nicht dabei';
+    return 'Offen';
+  }
+
+  function statusBadgeClass(status){
+    if(status==='present')return 'success';
+    if(status==='absent')return 'danger';
+    return 'on-unknown';
+  }
+
+  function renderEventCard(event){
+    const status=statuses[event.id]||'present';
+    const reason=reasons[event.id]||'';
+    const isNext=nextEvent?.id===event.id;
+    const typeLabel=event.type==='training'
+      ? 'Training'
+      : event.type==='game'
+        ? 'Spiel'
+        : 'Trainingslager';
+
+    return `
+      <div class="player-portal-event"
+           style="
+             border:1px solid var(--line);
+             border-radius:14px;
+             padding:14px;
+             margin-top:10px;
+             background:${isNext?'#f4f9ff':'#fff'};
+             box-shadow:${isNext?'0 0 0 2px rgba(31,95,153,.12)':'none'};
+           ">
+        <div style="min-width:0">
+          ${isNext?'<div class="player-role-badge" style="display:inline-block;margin-bottom:7px">Nächster Termin</div>':''}
+          <strong style="display:block;font-size:16px">${typeLabel} · ${fmtDate(event.date)}</strong>
+          <span>${event.time||''}${event.title?' · '+event.title:''}</span>
+
+          <div style="margin-top:8px">
+            <span class="${statusBadgeClass(status)}"
+                  style="
+                    display:inline-block;
+                    padding:5px 9px;
+                    border-radius:999px;
+                    font-size:12px;
+                    font-weight:750;
+                  ">
+              ${statusText(status)}
+            </span>
+          </div>
+
+          ${reason?`
+            <div style="
+              margin-top:8px;
+              padding:8px 10px;
+              border-radius:10px;
+              background:#fff3f3;
+              color:#922;
+              font-size:13px;
+            ">
+              <strong>Grund:</strong> ${reason}
+            </div>
+          `:''}
         </div>
+
         <div class="player-portal-actions">
-          <button class="${status==='present'?'success':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','present')">Dabei</button>
-          <button class="${status==='absent'?'danger':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','absent')">Nicht dabei</button>
-          <button class="${status==='open'?'on-unknown':'soft'}" onclick="saveOwnPlayerStatus('${event.id}','open')">Offen</button>
+          <button class="${status==='present'?'success':'soft'}"
+                  onclick="requestOwnPlayerStatus('${event.id}','present')">
+            Dabei
+          </button>
+
+          <button class="${status==='absent'?'danger':'soft'}"
+                  onclick="requestOwnPlayerStatus('${event.id}','absent')">
+            Nicht dabei
+          </button>
+
+          <button class="${status==='open'?'on-unknown':'soft'}"
+                  onclick="requestOwnPlayerStatus('${event.id}','open')">
+            Offen
+          </button>
         </div>
       </div>`;
-    }).join(''):'<p class="muted">Keine kommenden Termine vorhanden.</p>'}
-  </div>`;
+  }
+
+  function renderSection(title,icon,sectionEvents,emptyText){
+    return `
+      <div class="player-portal-card">
+        <div class="player-portal-head">
+          <h2 style="margin:0">${icon} ${title}</h2>
+          <span class="player-role-badge">${sectionEvents.length}</span>
+        </div>
+        ${sectionEvents.length
+          ? sectionEvents.map(renderEventCard).join('')
+          : `<p class="muted">${emptyText}</p>`}
+      </div>`;
+  }
+
+  app.innerHTML=`
+    <div class="player-portal-card">
+      <div class="player-portal-head">
+        <div style="display:flex;align-items:center;gap:12px">
+          <img
+            src="${teamLogo}"
+            alt="Teamlogo"
+            style="
+              width:64px;
+              height:64px;
+              object-fit:contain;
+              border-radius:14px;
+              border:1px solid var(--line);
+              background:#fff;
+              padding:5px;
+            ">
+          <div>
+            <h2 style="margin:0">Hallo ${profile.display_name}</h2>
+            <div class="muted">${teamName}</div>
+            <div class="player-email">${cloudUser.email||''}</div>
+          </div>
+        </div>
+        <span class="player-role-badge">Spielerzugang</span>
+      </div>
+      <p style="margin-bottom:0">
+        Du kannst deine Teilnahme selbst festlegen. Bei «Nicht dabei» ist ein Grund erforderlich.
+      </p>
+    </div>
+
+    ${renderSection('Trainings','🏒',trainings,'Keine kommenden Trainings vorhanden.')}
+    ${renderSection('Spiele','🥅',games,'Keine kommenden Spiele vorhanden.')}
+    ${camps.length?renderSection('Trainingslager','🏕️',camps,'Keine kommenden Trainingslager vorhanden.'):''}
+  `;
 }
 
-async function saveOwnPlayerStatus(eventId,status){
+function requestOwnPlayerStatus(eventId,status){
+  if(status!=='absent'){
+    saveOwnPlayerStatus(eventId,status,'');
+    return;
+  }
+
+  const existingReason=currentPlayerSchedule?.reasons?.[eventId]||'';
+
+  openModal(`
+    <h2>Nicht dabei</h2>
+    <div class="stack">
+      <p>Bitte gib den Grund für deine Abwesenheit an.</p>
+
+      <div class="field">
+        <label>Abwesenheitsgrund</label>
+        <input
+          id="ownAbsenceReason"
+          value="${existingReason}"
+          placeholder="z. B. Ferien, Arbeit, verletzt, krank">
+      </div>
+
+      <div class="row">
+        <button class="btn danger" onclick="confirmOwnAbsence('${eventId}')">
+          Nicht dabei speichern
+        </button>
+        <button class="btn ghost" onclick="closeModal()">
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  `);
+
+  requestAnimationFrame(()=>{
+    const input=document.getElementById('ownAbsenceReason');
+    if(input){
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+function confirmOwnAbsence(eventId){
+  const reason=document.getElementById('ownAbsenceReason')?.value.trim()||'';
+
+  if(!reason){
+    alert('Bitte einen Abwesenheitsgrund eingeben.');
+    return;
+  }
+
+  closeModal();
+  saveOwnPlayerStatus(eventId,'absent',reason);
+}
+
+async function saveOwnPlayerStatus(eventId,status,reason=''){
   const {error}=await cloudClient.rpc('set_my_player_status',{
     target_event_id:eventId,
-    new_status:status
+    new_status:status,
+    absence_reason:status==='absent'?reason:null
   });
 
   if(error){
     alert('Status konnte nicht gespeichert werden: '+error.message);
     return;
   }
+
   await loadPlayerPortal();
 }
 
