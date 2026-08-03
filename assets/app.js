@@ -2480,6 +2480,302 @@ async function loadPlayerPortal(){
   renderPlayerPortalCalendar();
 }
 
+function setPlayerPortalType(type){
+  playerPortalType=type;
+  document.getElementById('playerPortalTrainingBtn').className=
+    'btn '+(type==='training'?'primary':'soft');
+  document.getElementById('playerPortalGameBtn').className=
+    'btn '+(type==='game'?'primary':'soft');
+
+  const autoButton=document.getElementById('playerPortalAutoCalendarBtn');
+  if(autoButton){
+    autoButton.textContent=type==='training'
+      ? '📲 Trainings zu meinem Kalender hinzufügen'
+      : '📲 Spiele zu meinem Kalender hinzufügen';
+  }
+
+  renderPlayerPortalCalendar();
+}
+
+function changePlayerPortalMonth(offset){
+  const [year,month]=playerPortalMonth.split('-').map(Number);
+  const next=new Date(year,month-1+offset,1);
+  playerPortalMonth=[
+    next.getFullYear(),
+    String(next.getMonth()+1).padStart(2,'0')
+  ].join('-');
+  renderPlayerPortalCalendar();
+}
+
+function playerPortalStatus(eventId){
+  return currentPlayerSchedule?.statuses?.[eventId]||'present';
+}
+
+function playerPortalReason(eventId){
+  return currentPlayerSchedule?.reasons?.[eventId]||'';
+}
+
+function playerPortalStatusStyle(status){
+  if(status==='present'){
+    return {
+      background:'#e8f7ee',
+      border:'#7ac99b',
+      color:'#13733f',
+      label:'Dabei'
+    };
+  }
+
+  if(status==='absent'){
+    return {
+      background:'#fdeaea',
+      border:'#e59a9a',
+      color:'#a12727',
+      label:'Nicht dabei'
+    };
+  }
+
+  return {
+    background:'#fff4cc',
+    border:'#e2c65f',
+    color:'#8a6500',
+    label:'Unsicher'
+  };
+}
+
+function renderPlayerPortalCalendar(){
+  const target=document.getElementById('playerPortalCalendar');
+  const title=document.getElementById('playerPortalMonthTitle');
+  if(!target||!title||!currentPlayerSchedule)return;
+
+  const [year,month]=playerPortalMonth.split('-').map(Number);
+  const firstDay=new Date(year,month-1,1);
+  const lastDay=new Date(year,month,0);
+
+  title.textContent=new Intl.DateTimeFormat('de-CH',{
+    month:'long',
+    year:'numeric'
+  }).format(firstDay);
+
+  const events=(currentPlayerSchedule.events||[])
+    .filter(event=>
+      event.type===playerPortalType &&
+      event.date.startsWith(playerPortalMonth)
+    )
+    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+
+  const eventMap={};
+  for(const event of events){
+    eventMap[event.date] ||= [];
+    eventMap[event.date].push(event);
+  }
+
+  const mondayIndex=(firstDay.getDay()+6)%7;
+  const cells=[];
+
+  for(let i=0;i<mondayIndex;i++){
+    cells.push('<div style="min-height:92px;background:#f7f9fb;border-radius:10px"></div>');
+  }
+
+  for(let day=1;day<=lastDay.getDate();day++){
+    const date=[
+      year,
+      String(month).padStart(2,'0'),
+      String(day).padStart(2,'0')
+    ].join('-');
+
+    const dayEvents=eventMap[date]||[];
+
+    const items=dayEvents.map(event=>{
+      const status=playerPortalStatus(event.id);
+      const style=playerPortalStatusStyle(status);
+      const reason=playerPortalReason(event.id);
+
+      return `
+        <button
+          onclick="openPlayerPortalEvent('${event.id}')"
+          style="
+            width:100%;
+            text-align:left;
+            border:1px solid ${style.border};
+            background:${style.background};
+            color:${style.color};
+            border-radius:8px;
+            padding:7px;
+            margin-top:5px;
+            font-size:11px;
+            font-weight:750;
+            cursor:pointer;
+          ">
+          <div>
+            ${event.time||''}
+            ${event.type==='game'
+              ? ` · ${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
+              : (event.title?' · '+event.title:'')}
+          </div>
+          <div style="font-size:10px;margin-top:2px">${style.label}</div>
+          ${reason?`<div style="font-size:10px;margin-top:2px">Grund: ${reason}</div>`:''}
+        </button>
+      `;
+    }).join('');
+
+    cells.push(`
+      <div style="
+        min-height:92px;
+        border:1px solid var(--line);
+        border-radius:10px;
+        padding:6px;
+        background:#fff;
+      ">
+        <div style="font-weight:800;font-size:12px">${day}</div>
+        ${items}
+      </div>
+    `);
+  }
+
+  target.innerHTML=`
+    <div style="
+      display:grid;
+      grid-template-columns:repeat(7,minmax(0,1fr));
+      gap:5px;
+      font-size:11px;
+      margin-bottom:6px;
+      text-align:center;
+      font-weight:750;
+      color:#586579;
+    ">
+      <div>Mo</div>
+      <div>Di</div>
+      <div>Mi</div>
+      <div>Do</div>
+      <div>Fr</div>
+      <div>Sa</div>
+      <div>So</div>
+    </div>
+
+    <div style="
+      display:grid;
+      grid-template-columns:repeat(7,minmax(0,1fr));
+      gap:5px;
+      overflow-x:auto;
+    ">
+      ${cells.join('')}
+    </div>
+
+    ${events.length?'':`
+      <p class="muted" style="margin-top:14px">
+        In diesem Monat sind keine ${playerPortalType==='training'?'Trainings':'Spiele'} eingetragen.
+      </p>
+    `}
+  `;
+}
+
+function openPlayerPortalEvent(eventId){
+  const event=(currentPlayerSchedule?.events||[]).find(item=>item.id===eventId);
+  if(!event)return;
+
+  const status=playerPortalStatus(eventId);
+  const reason=playerPortalReason(eventId);
+  const typeLabel=event.type==='training'?'Training':'Spiel';
+
+  openModal(`
+    <h2>${typeLabel}</h2>
+    <div class="stack">
+      <div>
+        <strong>${fmtDate(event.date)} · ${event.time||''}</strong>
+        ${event.type==='game'
+          ? `<div class="muted">Gegner: ${gameOpponent(event)} · ${gameHomeAwayLabel(event)}</div>`
+          : (event.title?`<div class="muted">${event.title}</div>`:'')}
+      </div>
+
+      ${reason?`
+        <div style="
+          padding:10px;
+          border-radius:10px;
+          background:#fdeaea;
+          color:#922;
+        ">
+          <strong>Abwesenheitsgrund:</strong> ${reason}
+        </div>
+      `:''}
+
+      <div class="row">
+        <button
+          class="btn ${status==='present'?'success':'soft'}"
+          onclick="requestOwnPlayerStatus('${event.id}','present')">
+          Dabei
+        </button>
+
+        <button
+          class="btn ${status==='absent'?'danger':'soft'}"
+          onclick="requestOwnPlayerStatus('${event.id}','absent')">
+          Nicht dabei
+        </button>
+
+        <button
+          class="btn ${status==='open'?'on-unknown':'soft'}"
+          onclick="requestOwnPlayerStatus('${event.id}','open')">
+          Unsicher
+        </button>
+      </div>
+    </div>
+  `);
+}
+
+function requestOwnPlayerStatus(eventId,status){
+  if(status!=='absent'){
+    closeModal();
+    saveOwnPlayerStatus(eventId,status,'');
+    return;
+  }
+
+  const existingReason=playerPortalReason(eventId);
+
+  openModal(`
+    <h2>Nicht dabei</h2>
+    <div class="stack">
+      <p>Bitte gib den Grund für deine Abwesenheit an.</p>
+
+      <div class="field">
+        <label>Abwesenheitsgrund</label>
+        <input
+          id="ownAbsenceReason"
+          value="${existingReason}"
+          placeholder="z. B. Ferien, Arbeit, verletzt, krank">
+      </div>
+
+      <div class="row">
+        <button class="btn danger" onclick="confirmOwnAbsence('${eventId}')">
+          Nicht dabei speichern
+        </button>
+        <button class="btn ghost" onclick="closeModal()">
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  `);
+
+  requestAnimationFrame(()=>{
+    const input=document.getElementById('ownAbsenceReason');
+    if(input){
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+function confirmOwnAbsence(eventId){
+  const reason=document.getElementById('ownAbsenceReason')?.value.trim()||'';
+
+  if(!reason){
+    alert('Bitte einen Abwesenheitsgrund eingeben.');
+    return;
+  }
+
+  closeModal();
+  saveOwnPlayerStatus(eventId,'absent',reason);
+}
+
+
 async function saveOwnPlayerStatus(eventId,status,reason=''){
   const {error}=await cloudClient.rpc('set_my_player_status',{
     target_event_id:eventId,
