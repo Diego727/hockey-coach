@@ -2140,44 +2140,62 @@ function downloadPlayerCalendar(type){
 
 
 function ensurePlayerPortalTheme(){
-  if(document.getElementById('playerPortalAltstadtTheme'))return;
+  let style=document.getElementById('playerPortalAltstadtTheme');
 
-  const style=document.createElement('style');
-  style.id='playerPortalAltstadtTheme';
+  if(!style){
+    style=document.createElement('style');
+    style.id='playerPortalAltstadtTheme';
+    document.head.appendChild(style);
+  }
+
   style.textContent=`
     :root{
-      --altstadt-navy:#0b1f36;
-      --altstadt-navy-2:#153a63;
-      --altstadt-red:#d3262f;
-      --altstadt-red-dark:#a9161e;
+      --altstadt-green:#173f32;
+      --altstadt-green-2:#245744;
+      --altstadt-green-soft:#e5f0eb;
+      --altstadt-charcoal:#2f3437;
       --altstadt-white:#ffffff;
-      --altstadt-ice:#f3f7fb;
-      --altstadt-line:#dbe5ef;
-      --altstadt-text:#152235;
-      --altstadt-muted:#6f7d8d;
-      --altstadt-shadow:0 14px 34px rgba(11,31,54,.12);
+      --altstadt-ice:#f5f8f7;
+      --altstadt-line:#d8e3de;
+      --altstadt-text:#25302c;
+      --altstadt-muted:#6e7974;
+      --altstadt-shadow:0 16px 40px rgba(23,63,50,.10);
     }
 
     #playerPilotApp.player-portal{
       max-width:1500px;
       margin:0 auto;
-      padding:20px;
-      background:
-        radial-gradient(circle at top right,rgba(211,38,47,.08),transparent 28%),
-        linear-gradient(180deg,#eef4f9 0%,#f8fafc 100%);
+      padding:22px;
       min-height:100vh;
       color:var(--altstadt-text);
+      background:
+        radial-gradient(circle at 10% 0%,rgba(36,87,68,.08),transparent 28%),
+        radial-gradient(circle at 100% 10%,rgba(23,63,50,.05),transparent 25%),
+        linear-gradient(180deg,#f4f8f6 0%,#fbfcfc 100%);
+    }
+
+    #playerPilotApp.player-portal::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      opacity:.18;
+      background-image:
+        linear-gradient(120deg,transparent 0 48%,rgba(255,255,255,.75) 49% 51%,transparent 52%),
+        linear-gradient(60deg,transparent 0 48%,rgba(23,63,50,.025) 49% 51%,transparent 52%);
+      background-size:90px 90px;
     }
 
     #playerPilotApp .player-portal-card{
-      border:1px solid rgba(11,31,54,.08);
-      border-radius:22px;
-      background:rgba(255,255,255,.96);
+      border:1px solid rgba(23,63,50,.08);
+      border-radius:24px;
+      background:rgba(255,255,255,.97);
       box-shadow:var(--altstadt-shadow);
-      padding:20px;
+      padding:22px;
       margin-bottom:18px;
       overflow:hidden;
       position:relative;
+      z-index:1;
     }
 
     #playerPilotApp .player-portal-card::before{
@@ -2185,21 +2203,21 @@ function ensurePlayerPortalTheme(){
       position:absolute;
       inset:0 auto 0 0;
       width:5px;
-      background:linear-gradient(180deg,var(--altstadt-red),var(--altstadt-red-dark));
+      background:linear-gradient(180deg,var(--altstadt-green-2),var(--altstadt-green));
     }
 
     #playerPilotApp .player-portal-head{
       display:flex;
       justify-content:space-between;
       align-items:center;
-      gap:16px;
+      gap:18px;
       flex-wrap:wrap;
     }
 
     #playerPilotApp h2,
     #playerPilotApp h3{
-      color:var(--altstadt-navy);
-      letter-spacing:-.02em;
+      color:var(--altstadt-green);
+      letter-spacing:-.025em;
     }
 
     #playerPilotApp .muted{
@@ -2207,48 +2225,58 @@ function ensurePlayerPortalTheme(){
     }
 
     #playerPilotApp .player-role-badge{
-      background:var(--altstadt-navy);
+      background:var(--altstadt-charcoal);
       color:#fff;
       border-radius:999px;
-      padding:7px 11px;
+      padding:7px 12px;
       font-weight:800;
       font-size:12px;
       letter-spacing:.02em;
     }
 
     #playerPilotApp .btn{
-      border-radius:12px;
-      min-height:42px;
+      border-radius:13px;
+      min-height:44px;
       font-weight:800;
-      transition:transform .16s ease,box-shadow .16s ease,background .16s ease;
+      transition:
+        transform .16s ease,
+        box-shadow .16s ease,
+        background .16s ease,
+        border-color .16s ease;
     }
 
     #playerPilotApp .btn:hover{
       transform:translateY(-1px);
-      box-shadow:0 8px 18px rgba(11,31,54,.12);
+      box-shadow:0 9px 20px rgba(23,63,50,.13);
     }
 
     #playerPilotApp .btn.primary{
-      background:linear-gradient(135deg,var(--altstadt-navy-2),var(--altstadt-navy));
-      border-color:var(--altstadt-navy);
+      background:linear-gradient(135deg,var(--altstadt-green-2),var(--altstadt-green));
+      border-color:var(--altstadt-green);
       color:#fff;
     }
 
     #playerPilotApp .btn.soft{
       background:#fff;
-      color:var(--altstadt-navy);
+      color:var(--altstadt-green);
       border:1px solid var(--altstadt-line);
     }
 
+    #playerPilotApp .btn.ghost{
+      background:var(--altstadt-green-soft);
+      color:var(--altstadt-green);
+      border:1px solid transparent;
+    }
+
     #playerPilotApp .btn.danger{
-      background:linear-gradient(135deg,var(--altstadt-red),var(--altstadt-red-dark));
+      background:#b52a31;
       color:#fff;
-      border-color:var(--altstadt-red);
+      border-color:#b52a31;
     }
 
     #playerPilotApp #playerPortalTrainingBtn,
     #playerPilotApp #playerPortalGameBtn{
-      min-height:54px;
+      min-height:56px;
       font-size:15px;
     }
 
@@ -2261,18 +2289,20 @@ function ensurePlayerPortalTheme(){
     #playerPilotApp #playerPortalGameBtn.primary::after{
       content:"";
       position:absolute;
-      left:18px;
-      right:18px;
+      left:20px;
+      right:20px;
       bottom:7px;
       height:3px;
-      background:var(--altstadt-red);
+      background:#fff;
+      opacity:.72;
       border-radius:999px;
     }
 
     #playerPilotApp #playerPortalCalendar{
-      border-radius:18px;
-      padding:10px;
-      background:linear-gradient(180deg,#f7fafc,#f0f5f9);
+      border-radius:20px;
+      padding:12px;
+      background:
+        linear-gradient(180deg,#f9fbfa,#eef4f1);
       border:1px solid var(--altstadt-line);
     }
 
@@ -2282,18 +2312,40 @@ function ensurePlayerPortalTheme(){
 
     #playerPilotApp #playerPortalCalendar button:hover{
       transform:translateY(-1px);
-      box-shadow:0 6px 14px rgba(11,31,54,.1);
+      box-shadow:0 7px 16px rgba(23,63,50,.10);
     }
 
     #playerPilotApp .player-email{
-      color:var(--altstadt-red-dark);
+      color:#dce7e2;
       font-weight:700;
       font-size:12px;
       margin-top:2px;
     }
 
     #playerPilotApp img[alt="Teamlogo"]{
-      box-shadow:0 8px 18px rgba(11,31,54,.12);
+      width:132px !important;
+      height:132px !important;
+      padding:8px !important;
+      border-radius:24px !important;
+      box-shadow:0 16px 34px rgba(0,0,0,.16) !important;
+      background:#fff !important;
+      border:1px solid rgba(255,255,255,.45) !important;
+    }
+
+    #playerPilotApp .player-portal-card[style*="linear-gradient"]{
+      background:
+        linear-gradient(135deg,#173f32 0%,#245744 100%) !important;
+    }
+
+    #playerPilotApp .player-portal-card[style*="linear-gradient"]::after{
+      content:"SC ALTSTADT OLTEN";
+      position:absolute;
+      right:24px;
+      bottom:18px;
+      font-size:11px;
+      font-weight:900;
+      letter-spacing:.16em;
+      color:rgba(255,255,255,.18);
     }
 
     @media(max-width:720px){
@@ -2302,7 +2354,7 @@ function ensurePlayerPortalTheme(){
       }
 
       #playerPilotApp .player-portal-card{
-        border-radius:18px;
+        border-radius:19px;
         padding:16px;
       }
 
@@ -2310,13 +2362,18 @@ function ensurePlayerPortalTheme(){
         align-items:flex-start;
       }
 
+      #playerPilotApp img[alt="Teamlogo"]{
+        width:104px !important;
+        height:104px !important;
+      }
+
       #playerPilotApp #playerPortalCalendar{
         overflow-x:auto;
       }
     }
   `;
-  document.head.appendChild(style);
 }
+
 
 function openCalendarHelp(){
   openModal(`
@@ -2556,7 +2613,7 @@ async function loadPlayerPortal(){
         width:180px;
         height:180px;
         border-radius:50%;
-        background:rgba(211,38,47,.22);
+        background:rgba(255,255,255,.10);
       "></div>
       <div class="player-portal-head" style="position:relative;z-index:1">
         <div style="display:flex;align-items:center;gap:12px">
@@ -2580,9 +2637,9 @@ async function loadPlayerPortal(){
         </div>
 
         <button class="btn soft" style="
-          background:rgba(255,255,255,.12);
+          background:rgba(255,255,255,.13);
           color:#fff;
-          border-color:rgba(255,255,255,.22);
+          border-color:rgba(255,255,255,.26);
         " onclick="openCalendarHelp()">
           ❓ Hilfe Kalenderexport
         </button>
