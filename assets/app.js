@@ -337,6 +337,7 @@ function createRecurringTrainings(){
 
   let created=0;
   let skipped=0;
+  const seriesId='series_'+crypto.randomUUID();
 
   for(let date=new Date(start);date<=end;date.setDate(date.getDate()+1)){
     if(!selectedDays.includes(date.getDay()))continue;
@@ -364,7 +365,8 @@ function createRecurringTrainings(){
       type:'training',
       date:dateString,
       time,
-      title:''
+      title:'',
+      seriesId
     });
 
     data.attendance[id]={};
@@ -386,6 +388,7 @@ function generateSeasonTrainings(){
  const start=new Date('2026-08-13T12:00:00');
  const end=new Date('2027-03-31T12:00:00');
  let created=0;
+ const seriesId='season_2026_2027';
 
  for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
    if(![1,4].includes(d.getDay()))continue;
@@ -407,7 +410,7 @@ function generateSeasonTrainings(){
 
    const time='20:00';
    const id='training_'+ds+'_'+time+'_'+Date.now()+'_'+created;
-   data.events.push({id,type:'training',date:ds,time,title:''});
+   data.events.push({id,type:'training',date:ds,time,title:'',seriesId});
    data.attendance[id]={};
    for(const p of data.players) data.attendance[id][p.id]='present';
    created++;
@@ -566,6 +569,7 @@ function renderSelected(){
       <button class="btn soft" onclick="setAllAttendance('${e.id}','present')">Alle dabei</button>
       <button class="btn ghost" onclick="setAllAttendance('${e.id}','open')">Alle offen</button>
       <button class="btn soft" onclick="downloadEventReport('${e.id}')">${e.type==='training'?'Trainingsrapport':e.type==='game'?'Spielrapport':'Lager-Rapport'} herunterladen</button>
+      ${e.type==='training'?`<button class="btn primary" onclick="openEventSeriesEditor('${e.id}')">Training/Serie bearbeiten</button>`:''}
     </div>
   </div>
   <div id="attendanceList" class="attendance-quick-list"></div>
@@ -602,6 +606,161 @@ function renderSelected(){
  renderLineup(e.id);
  renderCoachboard(e.id);
  for(const p of data.players){const s=a[p.id]||'unknown',row=document.createElement('div');row.className='player';row.dataset.search=`${p.name} ${p.position||p.role} ${p.jerseyNumber||''}`;row.innerHTML=`<div><div class="name">${p.name}${absenceReason(e.id,p.id)?`<span class="absence-badge">${absenceReason(e.id,p.id)}</span>`:''}</div><div class="role">${p.position||p.role} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div><div class="status"><button class="${s==='present'?'on-present':''}" onclick="setStatus('${p.id}','present')">✓</button><button class="${s==='absent'?'on-absent':''}" onclick="setStatus('${p.id}','absent')">✕</button><button class="${s==='unknown'?'on-unknown':''}" onclick="setStatus('${p.id}','unknown')">?</button></div>`;attendanceList.appendChild(row)}
+}
+
+
+function seriesCandidatesForEvent(event){
+  if(event.seriesId){
+    return data.events.filter(item=>item.seriesId===event.seriesId);
+  }
+
+  // Bereits bestehende Trainings ohne Serien-ID werden anhand
+  // der bisherigen Uhrzeit und Bezeichnung zusammengefasst.
+  return data.events.filter(item=>
+    item.type==='training' &&
+    (item.time||'')===(event.time||'') &&
+    (item.title||'')===(event.title||'')
+  );
+}
+
+function openEventSeriesEditor(eventId){
+  const event=data.events.find(item=>item.id===eventId);
+  if(!event||event.type!=='training')return;
+
+  const candidates=seriesCandidatesForEvent(event)
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const hasSeries=candidates.length>1;
+
+  openModal(`
+    <h2>Training bearbeiten</h2>
+    <div class="stack">
+      <div class="field">
+        <label>Datum</label>
+        <input id="editEventDate" type="date" value="${event.date||''}">
+      </div>
+
+      <div class="field">
+        <label>Uhrzeit</label>
+        <input id="editEventTime" type="time" value="${event.time||''}">
+      </div>
+
+      <div class="field">
+        <label>Titel / Bezeichnung</label>
+        <input id="editEventTitle" value="${event.title||''}" placeholder="Optional">
+      </div>
+
+      <div class="field">
+        <label>Änderung anwenden auf</label>
+        <select id="editEventScope">
+          <option value="single">Nur dieses Training</option>
+          ${hasSeries?`
+            <option value="future">Dieses und alle zukünftigen Trainings</option>
+            <option value="all">Die gesamte Serie (${candidates.length} Trainings)</option>
+          `:''}
+        </select>
+      </div>
+
+      ${hasSeries?`
+        <p class="muted">
+          Bei «dieses und alle zukünftigen Trainings» werden alle Termine ab
+          ${fmtDate(event.date)} angepasst. Das Datum selbst wird nur bei
+          «Nur dieses Training» geändert.
+        </p>
+      `:''}
+
+      <div class="row">
+        <button class="btn primary" onclick="saveEventSeriesEdit('${eventId}')">
+          Änderungen speichern
+        </button>
+        <button class="btn danger" onclick="deleteEventSeries('${eventId}')">
+          Training/Serie löschen
+        </button>
+      </div>
+    </div>
+  `);
+}
+
+function saveEventSeriesEdit(eventId){
+  const event=data.events.find(item=>item.id===eventId);
+  if(!event)return;
+
+  const newDate=document.getElementById('editEventDate')?.value||event.date;
+  const newTime=document.getElementById('editEventTime')?.value||event.time;
+  const newTitle=document.getElementById('editEventTitle')?.value.trim()||'';
+  const scope=document.getElementById('editEventScope')?.value||'single';
+
+  let targets=[event];
+
+  if(scope!=='single'){
+    const candidates=seriesCandidatesForEvent(event);
+    targets=scope==='future'
+      ? candidates.filter(item=>item.date>=event.date)
+      : candidates;
+  }
+
+  const sharedSeriesId=event.seriesId||('series_'+event.id);
+
+  for(const item of targets){
+    item.time=newTime;
+    item.title=newTitle;
+
+    if(scope==='single'){
+      item.date=newDate;
+    }
+
+    if(targets.length>1&&!item.seriesId){
+      item.seriesId=sharedSeriesId;
+    }
+
+    applyAbsencesToEvent(item);
+  }
+
+  closeModal();
+  save();
+
+  alert(
+    targets.length===1
+      ? 'Das Training wurde aktualisiert.'
+      : `${targets.length} Trainings wurden aktualisiert.`
+  );
+}
+
+function deleteEventSeries(eventId){
+  const event=data.events.find(item=>item.id===eventId);
+  if(!event)return;
+
+  const scope=document.getElementById('editEventScope')?.value||'single';
+  let targets=[event];
+
+  if(scope!=='single'){
+    const candidates=seriesCandidatesForEvent(event);
+    targets=scope==='future'
+      ? candidates.filter(item=>item.date>=event.date)
+      : candidates;
+  }
+
+  const message=targets.length===1
+    ? 'Dieses Training wirklich löschen?'
+    : `${targets.length} Trainings wirklich löschen?`;
+
+  if(!confirm(message))return;
+
+  const ids=new Set(targets.map(item=>item.id));
+
+  data.events=data.events.filter(item=>!ids.has(item.id));
+
+  for(const id of ids){
+    delete data.attendance[id];
+    delete data.lineups[id];
+    delete data.boards[id];
+  }
+
+  if(ids.has(selectedId)){
+    selectedId=null;
+  }
+
+  closeModal();
+  save();
 }
 
 function ensureAbsences(){data.absences ||= []}
