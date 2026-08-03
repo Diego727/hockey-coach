@@ -641,6 +641,405 @@ function filterAttendancePlayers(query){
   });
 }
 
+
+function allScheduleMonths(){
+  return [...new Set(
+    (data.events||[])
+      .filter(event=>event.date)
+      .map(event=>event.date.slice(0,7))
+  )].sort();
+}
+
+function trainingMonths(){
+  return [...new Set(
+    (data.events||[])
+      .filter(event=>event.type==='training'&&event.date)
+      .map(event=>event.date.slice(0,7))
+  )].sort();
+}
+
+function exportMonthLabel(month){
+  const [year,mon]=month.split('-').map(Number);
+  return new Intl.DateTimeFormat('de-CH',{
+    month:'long',
+    year:'numeric'
+  }).format(new Date(year,mon-1,1));
+}
+
+function openAttendanceMonthExport(){
+  const months=trainingMonths();
+
+  if(!months.length){
+    alert('Es sind noch keine Trainings vorhanden.');
+    return;
+  }
+
+  openModal(`
+    <h2>Monatsübersicht Anwesenheit</h2>
+    <div class="stack">
+      <p class="muted">
+        Wähle den Monat, für den du die Anwesenheitsübersicht herunterladen möchtest.
+      </p>
+
+      <div class="field">
+        <label>Monat</label>
+        <select id="attendanceExportMonth">
+          ${months.map(month=>`
+            <option value="${month}">${exportMonthLabel(month)}</option>
+          `).join('')}
+        </select>
+      </div>
+
+      <button class="btn primary" onclick="downloadAttendanceMonthPdf()">
+        PDF herunterladen
+      </button>
+    </div>
+  `);
+}
+
+function downloadAttendanceMonthPdf(){
+  const month=document.getElementById('attendanceExportMonth')?.value;
+  if(!month)return;
+
+  const trainings=(data.events||[])
+    .filter(event=>event.type==='training'&&event.date.startsWith(month))
+    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+
+  if(!trainings.length){
+    alert('Für diesen Monat sind keine Trainings vorhanden.');
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const pageWidth=doc.internal.pageSize.getWidth();
+
+  const hasLogo=addLogoToPdf(doc,10,6,18,18);
+  const titleX=hasLogo?34:14;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.text(
+    `${teamDisplayName()} – Anwesenheit ${exportMonthLabel(month)}`,
+    titleX,
+    14
+  );
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  if(teamCoachName())doc.text(`Coach: ${teamCoachName()}`,titleX,19);
+  doc.text(
+    'DA = dabei   AB = nicht dabei   ? = offen',
+    14,
+    25
+  );
+
+  const dateLabels=trainings.map(event=>{
+    const date=new Date(event.date+'T12:00:00');
+    return `${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')}`;
+  });
+
+  const head=['Spieler',...dateLabels];
+
+  const body=data.players.map(player=>[
+    `${player.jerseyNumber?'#'+player.jerseyNumber+' ':''}${player.name}`,
+    ...trainings.map(event=>{
+      const status=(data.attendance[event.id]||{})[player.id]||'open';
+      if(status==='present')return 'DA';
+      if(status==='absent')return 'AB';
+      return '?';
+    })
+  ]);
+
+  const playerColWidth=52;
+  const remainingWidth=pageWidth-20-playerColWidth;
+  const eventColWidth=Math.max(12,remainingWidth/Math.max(1,trainings.length));
+
+  doc.autoTable({
+    startY:30,
+    head:[head],
+    body,
+    margin:{left:10,right:10},
+    styles:{
+      fontSize:7.2,
+      cellPadding:1.5,
+      halign:'center',
+      valign:'middle',
+      overflow:'linebreak'
+    },
+    columnStyles:{
+      0:{halign:'left',cellWidth:playerColWidth}
+    },
+    didParseCell:function(cell){
+      if(cell.column.index>0){
+        cell.cell.styles.cellWidth=eventColWidth;
+      }
+
+      if(cell.section==='body'&&cell.column.index>0){
+        if(cell.cell.raw==='AB'){
+          cell.cell.styles.textColor=[170,35,42];
+          cell.cell.styles.fontStyle='bold';
+          cell.cell.styles.fillColor=[253,234,234];
+        }else if(cell.cell.raw==='DA'){
+          cell.cell.styles.textColor=[19,115,63];
+          cell.cell.styles.fontStyle='bold';
+          cell.cell.styles.fillColor=[232,247,238];
+        }else{
+          cell.cell.styles.textColor=[138,101,0];
+          cell.cell.styles.fontStyle='bold';
+          cell.cell.styles.fillColor=[255,244,204];
+        }
+      }
+    },
+    headStyles:{
+      fillColor:[23,63,50],
+      textColor:[255,255,255],
+      fontStyle:'bold',
+      fontSize:7
+    },
+    alternateRowStyles:{
+      fillColor:[247,250,249]
+    },
+    theme:'grid'
+  });
+
+  let y=doc.lastAutoTable.finalY+7;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.text('Anzahl anwesende Spieler pro Training',10,y);
+  y+=4;
+
+  function presentPlayers(event){
+    const record=data.attendance[event.id]||{};
+    return data.players.filter(player=>(record[player.id]||'open')==='present');
+  }
+
+  const summaryBody=[
+    ['Stürmer',...trainings.map(event=>presentPlayers(event).filter(player=>player.position==='Stürmer').length)],
+    ['Verteidiger',...trainings.map(event=>presentPlayers(event).filter(player=>player.position==='Verteidiger').length)],
+    ['Goalies',...trainings.map(event=>presentPlayers(event).filter(player=>player.position==='Goalie').length)],
+    ['Total',...trainings.map(event=>presentPlayers(event).length)]
+  ];
+
+  doc.autoTable({
+    startY:y,
+    head:[['Position',...dateLabels]],
+    body:summaryBody,
+    margin:{left:10,right:10},
+    styles:{
+      fontSize:7.5,
+      cellPadding:1.5,
+      halign:'center',
+      valign:'middle'
+    },
+    columnStyles:{
+      0:{halign:'left',cellWidth:playerColWidth,fontStyle:'bold'}
+    },
+    didParseCell:function(cell){
+      if(cell.column.index>0){
+        cell.cell.styles.cellWidth=eventColWidth;
+      }
+      if(cell.section==='body'&&cell.row.index===3){
+        cell.cell.styles.fontStyle='bold';
+        cell.cell.styles.fillColor=[229,240,235];
+      }
+    },
+    headStyles:{
+      fillColor:[36,87,68],
+      textColor:[255,255,255],
+      fontStyle:'bold'
+    },
+    theme:'grid'
+  });
+
+  doc.save(`Anwesenheit_${month}.pdf`);
+  closeModal();
+}
+
+function openSeasonPlanExport(){
+  const months=allScheduleMonths();
+
+  if(!months.length){
+    alert('Es sind noch keine Trainings oder Spiele vorhanden.');
+    return;
+  }
+
+  openModal(`
+    <h2>Trainings- und Spielplan</h2>
+    <div class="stack">
+      <p class="muted">
+        Wähle alle Monate aus, die im Plan enthalten sein sollen.
+      </p>
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+        gap:10px;
+      ">
+        ${months.map(month=>`
+          <label style="
+            display:flex;
+            align-items:center;
+            gap:8px;
+            padding:10px;
+            border:1px solid var(--line);
+            border-radius:10px;
+            background:#fff;
+          ">
+            <input
+              class="seasonPlanMonth"
+              type="checkbox"
+              value="${month}"
+              checked>
+            <span>${exportMonthLabel(month)}</span>
+          </label>
+        `).join('')}
+      </div>
+
+      <div class="row">
+        <button class="btn soft" onclick="setAllSeasonPlanMonths(true)">
+          Alle auswählen
+        </button>
+        <button class="btn ghost" onclick="setAllSeasonPlanMonths(false)">
+          Auswahl löschen
+        </button>
+      </div>
+
+      <button class="btn primary" onclick="downloadSeasonPlanPdf()">
+        PDF herunterladen
+      </button>
+    </div>
+  `);
+}
+
+function setAllSeasonPlanMonths(checked){
+  document.querySelectorAll('.seasonPlanMonth')
+    .forEach(input=>input.checked=checked);
+}
+
+function downloadSeasonPlanPdf(){
+  const selectedMonths=[...document.querySelectorAll('.seasonPlanMonth:checked')]
+    .map(input=>input.value)
+    .sort();
+
+  if(!selectedMonths.length){
+    alert('Bitte mindestens einen Monat auswählen.');
+    return;
+  }
+
+  const events=(data.events||[])
+    .filter(event=>
+      ['training','game'].includes(event.type)&&
+      selectedMonths.includes(event.date.slice(0,7))
+    )
+    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+
+  if(!events.length){
+    alert('Für die ausgewählten Monate sind keine Termine vorhanden.');
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+
+  selectedMonths.forEach((month,index)=>{
+    if(index>0)doc.addPage();
+
+    const monthEvents=events.filter(event=>event.date.startsWith(month));
+
+    const hasLogo=addLogoToPdf(doc,14,8,20,20);
+    const titleX=hasLogo?40:14;
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(16);
+    doc.text(teamDisplayName(),titleX,15);
+
+    doc.setFontSize(13);
+    doc.text(
+      `Trainings- und Spielplan – ${exportMonthLabel(month)}`,
+      titleX,
+      23
+    );
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(8);
+    if(teamCoachName())doc.text(`Coach: ${teamCoachName()}`,titleX,29);
+
+    const body=monthEvents.map(event=>{
+      const opponent=event.opponent||event.title||'–';
+      const homeAway=event.homeAway==='home'
+        ? 'Heim'
+        : event.homeAway==='away'
+          ? 'Auswärts'
+          : '–';
+
+      return [
+        fmtDate(event.date),
+        event.time||'–',
+        event.type==='training'?'Training':'Spiel',
+        event.type==='game'?opponent:(event.title||'Training'),
+        event.type==='game'?homeAway:'–'
+      ];
+    });
+
+    doc.autoTable({
+      startY:35,
+      head:[['Datum','Zeit','Typ','Bezeichnung / Gegner','Heim / Auswärts']],
+      body:body.length?body:[['–','–','–','–','–']],
+      margin:{left:14,right:14},
+      styles:{
+        fontSize:8.5,
+        cellPadding:2.4,
+        valign:'middle'
+      },
+      columnStyles:{
+        0:{cellWidth:40},
+        1:{cellWidth:18},
+        2:{cellWidth:23},
+        3:{cellWidth:72},
+        4:{cellWidth:30}
+      },
+      didParseCell:function(cell){
+        if(cell.section==='body'){
+          const event=monthEvents[cell.row.index];
+          if(event?.type==='game'){
+            cell.cell.styles.fillColor=[239,243,241];
+          }
+        }
+      },
+      headStyles:{
+        fillColor:[23,63,50],
+        textColor:[255,255,255],
+        fontStyle:'bold'
+      },
+      alternateRowStyles:{
+        fillColor:[248,250,249]
+      },
+      theme:'grid'
+    });
+
+    doc.setFontSize(7);
+    doc.setTextColor(100,110,105);
+    doc.text(
+      `Erstellt am ${new Date().toLocaleDateString('de-CH')}`,
+      14,
+      288
+    );
+  });
+
+  const firstMonth=selectedMonths[0];
+  const lastMonth=selectedMonths[selectedMonths.length-1];
+
+  doc.save(
+    firstMonth===lastMonth
+      ? `Trainings_und_Spielplan_${firstMonth}.pdf`
+      : `Trainings_und_Spielplan_${firstMonth}_bis_${lastMonth}.pdf`
+  );
+
+  closeModal();
+}
+
 let coachCalendarMonth=new Date().toISOString().slice(0,7);
 let coachCalendarType='training';
 
@@ -1075,18 +1474,14 @@ function renderEvents(){
  const list=eventList,sorted=data.events.filter(e=>e.type===currentType).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
 
  const calendarToolbar=currentType==='training'||currentType==='game'
-   ? `<div class="row" style="margin:0 0 12px">
+   ? `<div class="row" style="margin:0 0 12px;gap:10px;flex-wrap:wrap">
         <button class="btn primary"
-                onclick="openCoachCalendar('${currentType}')">
-          📅 Kalenderansicht
+                onclick="openAttendanceMonthExport()">
+          📊 Monatsübersicht Anwesenheit
         </button>
         <button class="btn soft"
-                onclick="openCalendarSubscriptionDialog('${currentType}')">
-          🔄 ${currentType==='training'?'Trainings':'Spiele'} abonnieren
-        </button>
-        <button class="btn soft"
-                onclick="copyCalendarLink('${currentType}')">
-          🔗 Link kopieren
+                onclick="openSeasonPlanExport()">
+          📅 Trainings- und Spielplan
         </button>
       </div>`
    : '';
