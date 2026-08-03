@@ -1858,12 +1858,13 @@ function detectedCalendarDevice(){
   return 'unknown';
 }
 
-function addCalendarToDetectedDevice(type,teamKeyOverride=''){
+async function addCalendarToDetectedDevice(type,teamKeyOverride=''){
   const teamKey=teamKeyOverride||activeTeamKey||currentPlayerProfile?.team_key;
   if(!teamKey)return;
 
   const httpsUrl=calendarSubscriptionUrl(teamKey,type);
   const device=detectedCalendarDevice();
+  const calendarName=type==='training'?'Trainingskalender':'Spielkalender';
 
   if(device==='apple'){
     window.location.href=webcalUrl(httpsUrl);
@@ -1871,15 +1872,73 @@ function addCalendarToDetectedDevice(type,teamKeyOverride=''){
   }
 
   if(device==='google'){
-    const googleUrl=
-      'https://calendar.google.com/calendar/render?cid='+
-      encodeURIComponent(httpsUrl);
-    window.open(googleUrl,'_blank','noopener');
+    try{
+      await navigator.clipboard.writeText(httpsUrl);
+    }catch(_error){}
+
+    openModal(`
+      <h2>${calendarName} in Google Kalender abonnieren</h2>
+      <div class="stack">
+        <p>
+          Der Live-Kalenderlink wurde nach Möglichkeit kopiert.
+          Google Kalender erlaubt das Abonnieren einer URL am zuverlässigsten
+          über die Webversion.
+        </p>
+
+        <ol style="line-height:1.7;padding-left:22px">
+          <li>Google Kalender im Browser öffnen.</li>
+          <li>Bei «Weitere Kalender» auf das Plus klicken.</li>
+          <li>«Per URL» auswählen.</li>
+          <li>Diesen Link einfügen:</li>
+        </ol>
+
+        <input value="${httpsUrl}" readonly onclick="this.select()">
+
+        <div class="row">
+          <button class="btn primary" onclick="copyCalendarLink('${type}')">
+            Link kopieren
+          </button>
+          <a class="btn soft"
+             style="text-decoration:none"
+             href="https://calendar.google.com/calendar/u/0/r/settings/addbyurl"
+             target="_blank"
+             rel="noopener">
+            Google Kalender öffnen
+          </a>
+        </div>
+      </div>
+    `);
     return;
   }
 
   if(device==='outlook'){
-    window.location.href=webcalUrl(httpsUrl);
+    openModal(`
+      <h2>${calendarName} in Outlook abonnieren</h2>
+      <div class="stack">
+        <p>
+          Wähle «Outlook öffnen». Falls Windows stattdessen eine Datei lädt,
+          kopiere den Live-Link und füge ihn in Outlook unter
+          «Kalender hinzufügen → Aus dem Web abonnieren» ein.
+        </p>
+
+        <a class="btn primary"
+           style="text-decoration:none;text-align:center"
+           href="${webcalUrl(httpsUrl)}">
+          Outlook / Kalender-App öffnen
+        </a>
+
+        <button class="btn soft" onclick="copyCalendarLink('${type}')">
+          Live-Link kopieren
+        </button>
+
+        <input value="${httpsUrl}" readonly onclick="this.select()">
+
+        <div class="muted">
+          Das ist ein Abonnement. Änderungen in der Hockey-App werden später
+          automatisch über denselben Link geladen.
+        </div>
+      </div>
+    `);
     return;
   }
 
@@ -1909,8 +1968,9 @@ function openCalendarSubscriptionDialog(type,teamKeyOverride=''){
     <h2>${title} abonnieren</h2>
     <div class="stack">
       <p>
-        Der Kalender muss nur einmal abonniert werden.
-        Spätere Änderungen werden über denselben Kalenderlink aktualisiert.
+        Wähle ein echtes Kalender-Abonnement. Der Kalender muss nur einmal
+        hinzugefügt werden; spätere Änderungen werden über denselben Live-Link
+        aktualisiert.
       </p>
 
       <a class="btn primary"
@@ -1936,7 +1996,7 @@ function openCalendarSubscriptionDialog(type,teamKeyOverride=''){
          href="${httpsUrl}"
          target="_blank"
          rel="noopener">
-        📥 ICS-Datei öffnen
+        📥 Einmalige ICS-Datei öffnen
       </a>
 
       <div class="muted">
