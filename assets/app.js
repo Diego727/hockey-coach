@@ -2186,6 +2186,137 @@ function addAttendanceTables(doc,event,startY){
   return y;
 }
 function addLineupTable(doc,event,startY){
+  ensureLineup(event.id);
+
+  // Trainingsrapport: grafische Aufstellung wie in der App.
+  if(event.type==='training'){
+    doc.addPage();
+
+    const pageWidth=doc.internal.pageSize.getWidth();
+    const pageHeight=doc.internal.pageSize.getHeight();
+    const margin=14;
+    const contentWidth=pageWidth-(margin*2);
+    const lineup=data.lineups[event.id];
+
+    const pname=pid=>{
+      const player=data.players.find(p=>p.id===pid);
+      return player?safePdfText(player.name):'–';
+    };
+
+    const drawSlot=(x,y,w,h,label,pid)=>{
+      doc.setDrawColor(158,190,177);
+      doc.setFillColor(255,255,255);
+      doc.roundedRect(x,y,w,h,2.5,2.5,'FD');
+
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(6.2);
+      doc.setTextColor(105,118,112);
+      doc.text(
+        safePdfText(label).toUpperCase(),
+        x+w/2,
+        y+4.5,
+        {align:'center'}
+      );
+
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(46,58,53);
+
+      const lines=doc.splitTextToSize(pname(pid),w-8).slice(0,2);
+      const nameY=y+(h/2)+(lines.length===1?2:0);
+      doc.text(lines,x+w/2,nameY,{align:'center'});
+    };
+
+    // Kopf
+    const hasLogo=addLogoToPdf(doc,14,7,20,20);
+    const titleX=hasLogo?40:14;
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(16);
+    doc.setTextColor(23,63,50);
+    doc.text(`${teamDisplayName()} – Aufstellung`,titleX,14);
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9);
+    doc.setTextColor(90,102,97);
+    doc.text(`${fmtDateLong(event.date)} · ${event.time}`,titleX,20);
+
+    // Goalies
+    const goalieCardW=64;
+    const goalieGap=10;
+    const goalieStartX=(pageWidth-(goalieCardW*2+goalieGap))/2;
+    const goalieY=29;
+
+    ['G1','G2'].forEach((key,index)=>{
+      const x=goalieStartX+index*(goalieCardW+goalieGap);
+
+      doc.setDrawColor(216,227,222);
+      doc.setFillColor(249,252,250);
+      doc.roundedRect(x,goalieY,goalieCardW,31,3,3,'FD');
+
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(23,63,50);
+      doc.text(`Goalie ${index+1}`,x+goalieCardW/2,goalieY+6,{align:'center'});
+
+      drawSlot(
+        x+5,
+        goalieY+9,
+        goalieCardW-10,
+        17,
+        `Goalie ${index+1}`,
+        lineup.goalies[key]
+      );
+    });
+
+    // Linien
+    let y=67;
+    const lineBoxH=49;
+    const lineGap=4;
+
+    for(let line=1;line<=4;line++){
+      doc.setDrawColor(216,227,222);
+      doc.setFillColor(252,253,253);
+      doc.roundedRect(margin,y,contentWidth,lineBoxH,3,3,'FD');
+
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(23,63,50);
+      doc.text(`${line}. Linie`,pageWidth/2,y+6,{align:'center'});
+
+      // Verteidiger links / rechts
+      const defW=69;
+      const defGap=5;
+      const defStartX=(pageWidth-(defW*2+defGap))/2;
+
+      drawSlot(defStartX,y+9,defW,16,'Verteidiger links',lineup[line].LD);
+      drawSlot(defStartX+defW+defGap,y+9,defW,16,'Verteidiger rechts',lineup[line].RD);
+
+      // Stürmer links / Center / rechts
+      const fwGap=4;
+      const fwW=(contentWidth-12-(fwGap*2))/3;
+      const fwStartX=margin+6;
+
+      drawSlot(fwStartX,y+28,fwW,16,'Stürmer links',lineup[line].LW);
+      drawSlot(fwStartX+fwW+fwGap,y+28,fwW,16,'Center',lineup[line].C);
+      drawSlot(fwStartX+(fwW+fwGap)*2,y+28,fwW,16,'Stürmer rechts',lineup[line].RW);
+
+      y+=lineBoxH+lineGap;
+    }
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(118,128,123);
+    doc.text(
+      'Aufstellung gemäss der für dieses Training gespeicherten Linienzusammenstellung.',
+      margin,
+      pageHeight-10
+    );
+
+    return pageHeight-6;
+  }
+
+  // Spiele / Lager bleiben kompakt als Tabelle.
   let y=startY;
   y=addSectionTitle(doc,'Aufstellung',y+3);
   doc.autoTable({
@@ -2194,7 +2325,7 @@ function addLineupTable(doc,event,startY){
     body:pdfLineupRows(event.id),
     margin:{left:14,right:14},
     styles:{fontSize:8,cellPadding:2},
-    headStyles:{fillColor:[31,95,153]},
+    headStyles:{fillColor:[23,63,50]},
     theme:'grid'
   });
   return doc.lastAutoTable.finalY+5;
