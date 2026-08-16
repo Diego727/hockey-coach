@@ -577,6 +577,12 @@ function addPlayer(){
  const position=positionInput.value;
  const shot=shotInput.value;
 
+ if(birthdayInput?.value && birthdayToIso(birthdayInput.value)===null){
+   alert('Bitte das Geburtsdatum als TT.MM.JJJJ eingeben, z. B. 23.01.1995.');
+   birthdayInput.focus();
+   return;
+ }
+
  if(!name){
    alert('Bitte Namen eingeben.');
    nameInput.focus();
@@ -590,7 +596,9 @@ function addPlayer(){
    position,
    shot,
    jerseyNumber:numberInput?.value.trim()||'',
-   birthday:birthdayInput?.value||'',
+   birthday:birthdayInput
+     ? (birthdayToIso(birthdayInput.value)===null?'':birthdayToIso(birthdayInput.value))
+     : '',
    email:emailInput?.value.trim()||''
  };
 
@@ -614,7 +622,66 @@ function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
-function changeBirthday(id,birthday){const p=data.players.find(x=>x.id===id);if(p){p.birthday=birthday;save()}}
+function birthdayToDisplay(value){
+  if(!value)return '';
+  const match=String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(match)return `${match[3]}.${match[2]}.${match[1]}`;
+  return String(value);
+}
+
+function birthdayToIso(value){
+  const raw=String(value||'').trim();
+  if(!raw)return '';
+
+  let match=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(match){
+    const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+    const date=new Date(year,month-1,day);
+    if(date.getFullYear()===year && date.getMonth()===month-1 && date.getDate()===day){
+      return raw;
+    }
+    return null;
+  }
+
+  match=raw.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})$/);
+  if(!match)return null;
+
+  const day=Number(match[1]);
+  const month=Number(match[2]);
+  const year=Number(match[3]);
+  const date=new Date(year,month-1,day);
+
+  if(date.getFullYear()!==year || date.getMonth()!==month-1 || date.getDate()!==day){
+    return null;
+  }
+
+  return [
+    String(year).padStart(4,'0'),
+    String(month).padStart(2,'0'),
+    String(day).padStart(2,'0')
+  ].join('-');
+}
+
+function changeBirthday(id,birthday,inputElement=null){
+  const player=data.players.find(x=>x.id===id);
+  if(!player)return;
+
+  const iso=birthdayToIso(birthday);
+
+  if(iso===null){
+    alert('Bitte das Geburtsdatum als TT.MM.JJJJ eingeben, z. B. 23.01.1995.');
+    if(inputElement){
+      inputElement.value=birthdayToDisplay(player.birthday);
+      inputElement.focus();
+      inputElement.select();
+    }
+    return;
+  }
+
+  player.birthday=iso;
+  save();
+}
+
 function updatePlayerEmail(id,email){
   const player=data.players.find(p=>p.id===id);
   if(!player)return;
@@ -630,7 +697,12 @@ function updatePlayerEmail(id,email){
   player.email=normalizedEmail;
   save();
 }
-function fmtBirthday(s){if(!s)return '–';return new Intl.DateTimeFormat('de-CH',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
+function fmtBirthday(s){
+  if(!s)return '–';
+  const iso=birthdayToIso(s);
+  if(!iso)return s;
+  return birthdayToDisplay(iso);
+}
 
 
 function filterAttendancePlayers(query){
@@ -1784,7 +1856,17 @@ function renderPlayers(){
        <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
      </select>
      <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
-     <input type="date" value="${p.birthday||''}" onchange="changeBirthday('${p.id}',this.value)">
+     <input
+       type="text"
+       inputmode="numeric"
+       autocomplete="bday"
+       value="${birthdayToDisplay(p.birthday)}"
+       placeholder="TT.MM.JJJJ"
+       maxlength="10"
+       style="width:125px"
+       onchange="changeBirthday('${p.id}',this.value,this)"
+       onblur="changeBirthday('${p.id}',this.value,this)"
+     >
      <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
      <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
@@ -4439,6 +4521,19 @@ function deleteAvailability(id){
 }
 
 function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
+function initializeBirthdayInput(){
+  const input=document.getElementById('playerBirthday');
+  if(!input)return;
+  input.type='text';
+  input.inputMode='numeric';
+  input.placeholder='TT.MM.JJJJ';
+  input.maxLength=10;
+  input.autocomplete='bday';
+}
+
 renderAll();
 initCloud();
-requestAnimationFrame(initializeSeriesDayTimes);
+requestAnimationFrame(()=>{
+  initializeSeriesDayTimes();
+  initializeBirthdayInput();
+});
