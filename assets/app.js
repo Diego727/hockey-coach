@@ -578,7 +578,7 @@ function addPlayer(){
  const shot=shotInput.value;
 
  if(birthdayInput?.value && birthdayToIso(birthdayInput.value)===null){
-   alert('Bitte das Geburtsdatum als TT.MM.JJJJ eingeben, z. B. 23.01.1995.');
+   alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
    birthdayInput.focus();
    return;
  }
@@ -636,6 +636,12 @@ function birthdayToIso(value){
   let match=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(match){
     const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+    const currentYear=new Date().getFullYear();
+
+    if(year<1900 || year>currentYear){
+      return null;
+    }
+
     const date=new Date(year,month-1,day);
     if(date.getFullYear()===year && date.getMonth()===month-1 && date.getDate()===day){
       return raw;
@@ -649,6 +655,12 @@ function birthdayToIso(value){
   const day=Number(match[1]);
   const month=Number(match[2]);
   const year=Number(match[3]);
+  const currentYear=new Date().getFullYear();
+
+  if(year<1900 || year>currentYear){
+    return null;
+  }
+
   const date=new Date(year,month-1,day);
 
   if(date.getFullYear()!==year || date.getMonth()!==month-1 || date.getDate()!==day){
@@ -669,7 +681,7 @@ function changeBirthday(id,birthday,inputElement=null){
   const iso=birthdayToIso(birthday);
 
   if(iso===null){
-    alert('Bitte das Geburtsdatum als TT.MM.JJJJ eingeben, z. B. 23.01.1995.');
+    alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
     if(inputElement){
       inputElement.value=birthdayToDisplay(player.birthday);
       inputElement.focus();
@@ -3699,7 +3711,7 @@ async function saveMyPlayerData(){
 
   const birthday=birthdayToIso(birthdayRaw);
   if(birthdayRaw && birthday===null){
-    alert('Bitte das Geburtsdatum als TT.MM.JJJJ eingeben, z. B. 23.01.1995.');
+    alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
     return;
   }
 
