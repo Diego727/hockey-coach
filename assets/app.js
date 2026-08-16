@@ -3614,6 +3614,117 @@ function playerPortalStatusPresentation(status){
 let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
 
+
+function playerProfileData(){
+  return currentPlayerSchedule?.player_data||{};
+}
+
+function openMyPlayerData(){
+  const player=playerProfileData();
+
+  openModal(`
+    <h2>Meine Daten</h2>
+
+    <div class="stack">
+      <p class="muted">
+        Hier kannst du deine persönlichen Spielerdaten selbst aktualisieren.
+      </p>
+
+      <div class="field">
+        <label>Trikotnummer</label>
+        <input
+          id="myPlayerNumber"
+          type="number"
+          min="0"
+          max="99"
+          value="${player.jerseyNumber||''}"
+          placeholder="z. B. 23">
+      </div>
+
+      <div class="field">
+        <label>Position</label>
+        <select id="myPlayerPosition">
+          <option value="Stürmer" ${player.position==='Stürmer'?'selected':''}>Stürmer</option>
+          <option value="Verteidiger" ${player.position==='Verteidiger'?'selected':''}>Verteidiger</option>
+          <option value="Goalie" ${player.position==='Goalie'?'selected':''}>Goalie</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Schusshand</label>
+        <select id="myPlayerShot">
+          <option value="Links" ${player.shot==='Links'?'selected':''}>Links</option>
+          <option value="Rechts" ${player.shot==='Rechts'?'selected':''}>Rechts</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Geburtsdatum</label>
+        <input
+          id="myPlayerBirthday"
+          type="text"
+          inputmode="numeric"
+          maxlength="10"
+          placeholder="TT.MM.JJJJ"
+          value="${birthdayToDisplay(player.birthday||'')}">
+      </div>
+
+      <button class="btn primary" onclick="saveMyPlayerData()">
+        Speichern
+      </button>
+    </div>
+  `);
+}
+
+async function saveMyPlayerData(){
+  const number=document.getElementById('myPlayerNumber')?.value.trim()||'';
+  const position=document.getElementById('myPlayerPosition')?.value||'';
+  const shot=document.getElementById('myPlayerShot')?.value||'';
+  const birthdayRaw=document.getElementById('myPlayerBirthday')?.value.trim()||'';
+
+  if(number && (!/^\d{1,2}$/.test(number) || Number(number)<0 || Number(number)>99)){
+    alert('Bitte eine Trikotnummer zwischen 0 und 99 eingeben.');
+    return;
+  }
+
+  if(!['Stürmer','Verteidiger','Goalie'].includes(position)){
+    alert('Bitte eine gültige Position auswählen.');
+    return;
+  }
+
+  if(!['Links','Rechts'].includes(shot)){
+    alert('Bitte eine gültige Schusshand auswählen.');
+    return;
+  }
+
+  const birthday=birthdayToIso(birthdayRaw);
+  if(birthdayRaw && birthday===null){
+    alert('Bitte das Geburtsdatum als TT.MM.JJJJ eingeben, z. B. 23.01.1995.');
+    return;
+  }
+
+  const {data:result,error}=await cloudClient.rpc('update_my_player_data',{
+    new_jersey_number:number||null,
+    new_position:position,
+    new_shot:shot,
+    new_birthday:birthday||null
+  });
+
+  if(error){
+    alert('Deine Daten konnten nicht gespeichert werden: '+error.message);
+    return;
+  }
+
+  if(!result?.ok){
+    alert(result?.error||'Deine Daten konnten nicht gespeichert werden.');
+    return;
+  }
+
+  closeModal();
+  await loadPlayerPortal();
+  alert('Deine Spielerdaten wurden gespeichert.');
+}
+
 async function loadPlayerPortal(){
   ensurePlayerPortalTheme();
   const app=document.getElementById('playerPilotApp');
@@ -3768,12 +3879,51 @@ async function loadPlayerPortal(){
           </div>
         </div>
 
-        <button class="btn soft" style="
-          background:rgba(255,255,255,.13);
-          color:#fff;
-          border-color:rgba(255,255,255,.26);
-        " onclick="openCalendarHelp()">
-          ❓ Hilfe Kalenderexport
+        <div class="row" style="gap:8px">
+          <button class="btn soft" style="
+            background:rgba(255,255,255,.13);
+            color:#fff;
+            border-color:rgba(255,255,255,.26);
+          " onclick="openMyPlayerData()">
+            👤 Meine Daten
+          </button>
+
+          <button class="btn soft" style="
+            background:rgba(255,255,255,.13);
+            color:#fff;
+            border-color:rgba(255,255,255,.26);
+          " onclick="openCalendarHelp()">
+            ❓ Hilfe Kalenderexport
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="player-portal-card" style="padding:14px 18px">
+      <div style="
+        display:flex;
+        flex-wrap:wrap;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+      ">
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <span class="player-role-badge">
+            #${playerProfileData().jerseyNumber||'–'}
+          </span>
+          <span class="player-role-badge">
+            ${playerProfileData().position||'Position offen'}
+          </span>
+          <span class="player-role-badge">
+            Schuss ${playerProfileData().shot||'–'}
+          </span>
+          <span class="player-role-badge">
+            ${playerProfileData().birthday?birthdayToDisplay(playerProfileData().birthday):'Geburtsdatum offen'}
+          </span>
+        </div>
+
+        <button class="btn soft" onclick="openMyPlayerData()">
+          Daten bearbeiten
         </button>
       </div>
     </div>
