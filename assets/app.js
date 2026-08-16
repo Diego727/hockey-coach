@@ -1880,7 +1880,7 @@ function renderPlayers(){
        onblur="changeBirthday('${p.id}',this.value,this)"
      >
      <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Einladung senden</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
    </div>`;
    playerAdminList.appendChild(row)
@@ -4435,47 +4435,44 @@ async function createPlayerAccessWithPassword(playerId){
     return;
   }
 
-  const startPassword=prompt(
-    `Startpasswort für ${player.name} (mindestens 8 Zeichen):`
-  );
-  if(!startPassword)return;
-
-  if(startPassword.length<8){
-    alert('Das Startpasswort muss mindestens 8 Zeichen lang sein.');
+  if(!confirm(
+    `Einladung für ${player.name} an ${email} senden?`
+  )){
     return;
   }
 
   try{
+    const redirectTo=window.location.origin+window.location.pathname;
+
     const {data:result,error}=await cloudClient.functions.invoke(
       'manage-player-user',
       {
-        headers:{
-          apikey:SUPABASE_PUBLISHABLE_KEY
-        },
         body:{
-          action:'create',
+          action:'invite',
           clubId:SHARED_CLUB_ID,
           teamKey:activeTeamKey,
           playerRef:player.id,
           displayName:player.name,
           email,
-          startPassword
+          redirectTo
         }
       }
     );
 
     if(error||!result?.ok){
       const message=await readEdgeFunctionError(error,result);
-      alert('Zugang konnte nicht erstellt werden:\n\n'+message);
+      alert('Einladung konnte nicht gesendet werden:\n\n'+message);
       return;
     }
 
     alert(
-      `Zugang erstellt.\n\nE-Mail: ${email}\nStartpasswort: ${startPassword}`
+      result.alreadyExists
+        ? `Der Benutzer ${email} besteht bereits. Das Spielerprofil wurde mit diesem Zugang verknüpft.`
+        : `Einladung wurde an ${email} gesendet.`
     );
   }catch(error){
     alert(
-      'Zugang konnte nicht erstellt werden:\n\n'+
+      'Einladung konnte nicht gesendet werden:\n\n'+
       (error instanceof Error?error.message:String(error))
     );
   }
