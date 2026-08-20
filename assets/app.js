@@ -577,12 +577,6 @@ function addPlayer(){
  const position=positionInput.value;
  const shot=shotInput.value;
 
- if(birthdayInput?.value && birthdayToIso(birthdayInput.value)===null){
-   alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
-   birthdayInput.focus();
-   return;
- }
-
  if(!name){
    alert('Bitte Namen eingeben.');
    nameInput.focus();
@@ -596,9 +590,7 @@ function addPlayer(){
    position,
    shot,
    jerseyNumber:numberInput?.value.trim()||'',
-   birthday:birthdayInput
-     ? (birthdayToIso(birthdayInput.value)===null?'':birthdayToIso(birthdayInput.value))
-     : '',
+   birthday:birthdayInput?.value||'',
    email:emailInput?.value.trim()||''
  };
 
@@ -622,78 +614,7 @@ function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
-function birthdayToDisplay(value){
-  if(!value)return '';
-  const match=String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(match)return `${match[3]}.${match[2]}.${match[1]}`;
-  return String(value);
-}
-
-function birthdayToIso(value){
-  const raw=String(value||'').trim();
-  if(!raw)return '';
-
-  let match=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(match){
-    const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
-    const currentYear=new Date().getFullYear();
-
-    if(year<1900 || year>currentYear){
-      return null;
-    }
-
-    const date=new Date(year,month-1,day);
-    if(date.getFullYear()===year && date.getMonth()===month-1 && date.getDate()===day){
-      return raw;
-    }
-    return null;
-  }
-
-  match=raw.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})$/);
-  if(!match)return null;
-
-  const day=Number(match[1]);
-  const month=Number(match[2]);
-  const year=Number(match[3]);
-  const currentYear=new Date().getFullYear();
-
-  if(year<1900 || year>currentYear){
-    return null;
-  }
-
-  const date=new Date(year,month-1,day);
-
-  if(date.getFullYear()!==year || date.getMonth()!==month-1 || date.getDate()!==day){
-    return null;
-  }
-
-  return [
-    String(year).padStart(4,'0'),
-    String(month).padStart(2,'0'),
-    String(day).padStart(2,'0')
-  ].join('-');
-}
-
-function changeBirthday(id,birthday,inputElement=null){
-  const player=data.players.find(x=>x.id===id);
-  if(!player)return;
-
-  const iso=birthdayToIso(birthday);
-
-  if(iso===null){
-    alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
-    if(inputElement){
-      inputElement.value=birthdayToDisplay(player.birthday);
-      inputElement.focus();
-      inputElement.select();
-    }
-    return;
-  }
-
-  player.birthday=iso;
-  save();
-}
-
+function changeBirthday(id,birthday){const p=data.players.find(x=>x.id===id);if(p){p.birthday=birthday;save()}}
 function updatePlayerEmail(id,email){
   const player=data.players.find(p=>p.id===id);
   if(!player)return;
@@ -709,12 +630,7 @@ function updatePlayerEmail(id,email){
   player.email=normalizedEmail;
   save();
 }
-function fmtBirthday(s){
-  if(!s)return '–';
-  const iso=birthdayToIso(s);
-  if(!iso)return s;
-  return birthdayToDisplay(iso);
-}
+function fmtBirthday(s){if(!s)return '–';return new Intl.DateTimeFormat('de-CH',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
 
 
 function filterAttendancePlayers(query){
@@ -1868,17 +1784,7 @@ function renderPlayers(){
        <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
      </select>
      <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
-     <input
-       type="text"
-       inputmode="numeric"
-       autocomplete="bday"
-       value="${birthdayToDisplay(p.birthday)}"
-       placeholder="TT.MM.JJJJ"
-       maxlength="10"
-       style="width:125px"
-       onchange="changeBirthday('${p.id}',this.value,this)"
-       onblur="changeBirthday('${p.id}',this.value,this)"
-     >
+     <input type="date" value="${p.birthday||''}" onchange="changeBirthday('${p.id}',this.value)">
      <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
      <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
@@ -1921,264 +1827,32 @@ function ensureLineup(eventId){
     for(const pos of LINE_POSITIONS) if(!(pos.key in data.lineups[eventId][line])) data.lineups[eventId][line][pos.key]=null;
   }
 }
-function lineupPositionClass(posKey,isGoalie=false){
-  if(isGoalie||posKey==='G1'||posKey==='G2')return 'lineup-goalie';
-  if(posKey==='LD'||posKey==='RD')return 'lineup-defense';
-  return 'lineup-forward';
-}
-
 function makeSlot(eventId,line,posKey,label,pid,isGoalie=false){
   const slot=document.createElement('div');
-  slot.className=`slot lineup-slot ${lineupPositionClass(posKey,isGoalie)}`;
-
+  slot.className='slot';
   const player=data.players.find(p=>p.id===pid);
-
-  slot.innerHTML=`
-    <div class="slot-label">${label}</div>
-    ${
-      player
-        ? `<div class="assigned">${player.name}</div>
-           <button class="remove" onclick="removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie})">Entfernen</button>`
-        : '<div class="muted">Spieler hierher ziehen</div>'
-    }
-  `;
-
-  slot.addEventListener('dragover',ev=>{
-    ev.preventDefault();
-    slot.classList.add('dragover');
-  });
-
-  slot.addEventListener('dragleave',()=>{
-    slot.classList.remove('dragover');
-  });
-
+  slot.innerHTML=`<div class="slot-label">${label}</div>${player?`<div class="assigned">${player.name}</div><button class="remove" onclick="removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie})">Entfernen</button>`:'<div class="muted">Spieler hierher ziehen</div>'}`;
+  slot.addEventListener('dragover',ev=>{ev.preventDefault();slot.classList.add('dragover')});
+  slot.addEventListener('dragleave',()=>slot.classList.remove('dragover'));
   slot.addEventListener('drop',ev=>{
-    ev.preventDefault();
-    slot.classList.remove('dragover');
-
+    ev.preventDefault();slot.classList.remove('dragover');
     const draggedPid=ev.dataTransfer.getData('text/plain');
-    if(!draggedPid)return;
-
     assignToLineup(eventId,line,posKey,draggedPid,isGoalie);
   });
-
   return slot;
 }
-function ensureLineupEditorTheme(){
-  if(document.getElementById('lineupEditorCompactTheme'))return;
-
-  const style=document.createElement('style');
-  style.id='lineupEditorCompactTheme';
-  style.textContent=`
-    #playerPool.lineup-player-pool{
-      position:sticky;
-      top:8px;
-      z-index:30;
-      background:rgba(255,255,255,.98);
-      border:1px solid #d8e3de;
-      border-radius:14px;
-      padding:10px;
-      box-shadow:0 8px 22px rgba(23,63,50,.10);
-      margin-bottom:12px;
-    }
-
-    #playerPool .drag-player{
-      border-width:1px !important;
-      border-style:solid !important;
-      font-weight:800;
-      border-radius:10px !important;
-      padding:8px 11px !important;
-      box-shadow:none !important;
-    }
-
-    #playerPool .drag-player.lineup-player-forward{
-      background:#e8f1fb !important;
-      border-color:#9fc1e6 !important;
-      color:#124f87 !important;
-    }
-
-    #playerPool .drag-player.lineup-player-defense{
-      background:#e9f5ee !important;
-      border-color:#a7cfb5 !important;
-      color:#17653b !important;
-    }
-
-    #playerPool .drag-player.lineup-player-goalie{
-      background:#252b31 !important;
-      border-color:#252b31 !important;
-      color:#fff !important;
-    }
-
-    #playerPool .drag-player.used{
-      opacity:.30 !important;
-      filter:grayscale(.15);
-      cursor:not-allowed !important;
-    }
-
-    #lineupBoard .lineup-rink{
-      padding:12px !important;
-      border-radius:18px !important;
-    }
-
-    #lineupBoard .goalies-zone{
-      display:grid !important;
-      grid-template-columns:repeat(2,minmax(0,220px)) !important;
-      justify-content:center !important;
-      gap:14px !important;
-      margin-bottom:12px !important;
-    }
-
-    #lineupBoard .goalie-card{
-      margin:0 !important;
-      min-width:0 !important;
-    }
-
-    #lineupBoard .line-row{
-      margin:8px 0 !important;
-      padding:10px 12px 12px !important;
-      border-radius:14px !important;
-    }
-
-    #lineupBoard .line-row h3{
-      margin:0 0 8px !important;
-      text-align:center !important;
-      color:#173f32 !important;
-    }
-
-    #lineupBoard .compact-five-row{
-      display:grid !important;
-      grid-template-columns:repeat(5,minmax(135px,1fr)) !important;
-      gap:10px !important;
-      align-items:stretch !important;
-    }
-
-    #lineupBoard .lineup-slot{
-      min-height:86px !important;
-      display:flex !important;
-      flex-direction:column !important;
-      align-items:center !important;
-      justify-content:center !important;
-      text-align:center !important;
-      border-width:2px !important;
-      border-style:dashed !important;
-      border-radius:12px !important;
-      padding:8px !important;
-      transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;
-    }
-
-    #lineupBoard .lineup-slot.lineup-forward{
-      background:#eef5fc !important;
-      border-color:#8eb6df !important;
-    }
-
-    #lineupBoard .lineup-slot.lineup-defense{
-      background:#edf7f1 !important;
-      border-color:#8fc4a3 !important;
-    }
-
-    #lineupBoard .lineup-slot.lineup-goalie{
-      background:#30363d !important;
-      border-color:#30363d !important;
-      color:#fff !important;
-    }
-
-    #lineupBoard .lineup-slot.lineup-goalie .slot-label,
-    #lineupBoard .lineup-slot.lineup-goalie .assigned,
-    #lineupBoard .lineup-slot.lineup-goalie .muted{
-      color:#fff !important;
-    }
-
-    #lineupBoard .lineup-slot.dragover{
-      transform:scale(1.02);
-      box-shadow:0 0 0 4px rgba(36,87,68,.12) !important;
-    }
-
-    #lineupBoard .lineup-slot .assigned{
-      margin-top:4px;
-      font-weight:900 !important;
-    }
-
-    #lineupBoard .lineup-slot .remove{
-      margin-top:6px !important;
-    }
-
-    #lineupBoard.lineup-scroll-zone{
-      max-height:72vh;
-      overflow-y:auto;
-      overflow-x:auto;
-      padding-right:4px;
-      scroll-behavior:smooth;
-    }
-
-    @media(max-width:1050px){
-      #lineupBoard .compact-five-row{
-        grid-template-columns:repeat(5,150px) !important;
-        min-width:790px;
-      }
-
-      #lineupBoard.lineup-scroll-zone{
-        max-height:68vh;
-      }
-    }
-  `;
-
-  document.head.appendChild(style);
-}
-
-function lineupPlayerClass(player){
-  if(player.position==='Goalie'||player.role==='Goalie')return 'lineup-player-goalie';
-  if(player.position==='Verteidiger')return 'lineup-player-defense';
-  return 'lineup-player-forward';
-}
-
-function enableLineupAutoScroll(board){
-  if(!board||board.dataset.autoScrollReady==='1')return;
-  board.dataset.autoScrollReady='1';
-
-  board.addEventListener('dragover',ev=>{
-    ev.preventDefault();
-
-    const rect=board.getBoundingClientRect();
-    const edge=70;
-    const speed=18;
-
-    if(ev.clientY>rect.bottom-edge){
-      board.scrollTop+=speed;
-    }else if(ev.clientY<rect.top+edge){
-      board.scrollTop-=speed;
-    }
-  });
-}
-
 function renderLineup(eventId){
   ensureLineup(eventId);
-  ensureLineupEditorTheme();
-
   const lineup=data.lineups[eventId];
   const used=new Set();
-
-  for(const g of GOALIE_POSITIONS){
-    const pid=lineup.goalies[g.key];
-    if(pid)used.add(pid);
-  }
-
-  for(let line=1;line<=4;line++){
-    for(const pos of LINE_POSITIONS){
-      const pid=lineup[line][pos.key];
-      if(pid)used.add(pid);
-    }
-  }
+  for(const g of GOALIE_POSITIONS){const pid=lineup.goalies[g.key];if(pid)used.add(pid)}
+  for(let line=1;line<=4;line++) for(const pos of LINE_POSITIONS){const pid=lineup[line][pos.key];if(pid)used.add(pid)}
 
   const pool=document.getElementById('playerPool');
   const board=document.getElementById('lineupBoard');
   if(!pool||!board)return;
 
-  pool.classList.add('lineup-player-pool');
-  board.classList.add('lineup-scroll-zone');
-  enableLineupAutoScroll(board);
-
   pool.innerHTML='';
-
   const attendance=data.attendance[eventId]||{};
   const eligiblePlayers=data.players.filter(p=>attendance[p.id]==='present');
 
@@ -2188,94 +1862,54 @@ function renderLineup(eventId){
 
   for(const p of eligiblePlayers){
     const item=document.createElement('div');
-
-    item.className=
-      'drag-player '+
-      lineupPlayerClass(p)+
-      (used.has(p.id)?' used':'');
-
+    item.className='drag-player'+(used.has(p.id)?' used':'');
     item.textContent=p.name;
     item.draggable=!used.has(p.id);
     item.dataset.playerId=p.id;
-
     item.addEventListener('dragstart',ev=>{
-      if(used.has(p.id)){
-        ev.preventDefault();
-        return;
-      }
-
-      ev.dataTransfer.effectAllowed='move';
-      ev.dataTransfer.setData('text/plain',p.id);
+      if(used.has(p.id)){ev.preventDefault();return}
+      ev.dataTransfer.setData('text/plain',p.id)
     });
-
     pool.appendChild(item);
   }
 
   board.innerHTML='';
-
   const rink=document.createElement('div');
   rink.className='lineup-rink';
 
   const goalies=document.createElement('div');
   goalies.className='goalies-zone';
-
   for(const g of GOALIE_POSITIONS){
     const card=document.createElement('div');
     card.className='goalie-card';
     card.innerHTML=`<h3>${g.label}</h3>`;
-
-    card.appendChild(
-      makeSlot(
-        eventId,
-        'goalies',
-        g.key,
-        g.label,
-        lineup.goalies[g.key],
-        true
-      )
-    );
-
+    card.appendChild(makeSlot(eventId,'goalies',g.key,g.label,lineup.goalies[g.key],true));
     goalies.appendChild(card);
   }
-
   rink.appendChild(goalies);
-
-  const compactPositions=[
-    {key:'LD',label:'Verteidiger links'},
-    {key:'RD',label:'Verteidiger rechts'},
-    {key:'LW',label:'Stürmer links'},
-    {key:'C',label:'Center'},
-    {key:'RW',label:'Stürmer rechts'}
-  ];
 
   for(let line=1;line<=4;line++){
     const row=document.createElement('div');
     row.className='line-row';
     row.innerHTML=`<h3>${line}. Linie</h3>`;
 
-    const fiveRow=document.createElement('div');
-    fiveRow.className='compact-five-row';
+    const defense=document.createElement('div');
+    defense.className='defense-row';
+    defense.appendChild(makeSlot(eventId,line,'LD','Verteidiger links',lineup[line].LD));
+    defense.appendChild(makeSlot(eventId,line,'RD','Verteidiger rechts',lineup[line].RD));
 
-    for(const pos of compactPositions){
-      fiveRow.appendChild(
-        makeSlot(
-          eventId,
-          line,
-          pos.key,
-          pos.label,
-          lineup[line][pos.key],
-          false
-        )
-      );
-    }
+    const forwards=document.createElement('div');
+    forwards.className='forward-row';
+    forwards.appendChild(makeSlot(eventId,line,'LW','Stürmer links',lineup[line].LW));
+    forwards.appendChild(makeSlot(eventId,line,'C','Center',lineup[line].C));
+    forwards.appendChild(makeSlot(eventId,line,'RW','Stürmer rechts',lineup[line].RW));
 
-    row.appendChild(fiveRow);
+    row.appendChild(defense);
+    row.appendChild(forwards);
     rink.appendChild(row);
   }
-
   board.appendChild(rink);
 }
-
 function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
   for(const g of GOALIE_POSITIONS) if(data.lineups[eventId].goalies[g.key]===pid) data.lineups[eventId].goalies[g.key]=null;
@@ -3898,117 +3532,6 @@ function playerPortalStatusPresentation(status){
 let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
 
-
-function playerProfileData(){
-  return currentPlayerSchedule?.player_data||{};
-}
-
-function openMyPlayerData(){
-  const player=playerProfileData();
-
-  openModal(`
-    <h2>Meine Daten</h2>
-
-    <div class="stack">
-      <p class="muted">
-        Hier kannst du deine persönlichen Spielerdaten selbst aktualisieren.
-      </p>
-
-      <div class="field">
-        <label>Trikotnummer</label>
-        <input
-          id="myPlayerNumber"
-          type="number"
-          min="0"
-          max="99"
-          value="${player.jerseyNumber||''}"
-          placeholder="z. B. 23">
-      </div>
-
-      <div class="field">
-        <label>Position</label>
-        <select id="myPlayerPosition">
-          <option value="Stürmer" ${player.position==='Stürmer'?'selected':''}>Stürmer</option>
-          <option value="Verteidiger" ${player.position==='Verteidiger'?'selected':''}>Verteidiger</option>
-          <option value="Goalie" ${player.position==='Goalie'?'selected':''}>Goalie</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Schusshand</label>
-        <select id="myPlayerShot">
-          <option value="Links" ${player.shot==='Links'?'selected':''}>Links</option>
-          <option value="Rechts" ${player.shot==='Rechts'?'selected':''}>Rechts</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Geburtsdatum</label>
-        <input
-          id="myPlayerBirthday"
-          type="text"
-          inputmode="numeric"
-          maxlength="10"
-          placeholder="TT.MM.JJJJ"
-          value="${birthdayToDisplay(player.birthday||'')}">
-      </div>
-
-      <button class="btn primary" onclick="saveMyPlayerData()">
-        Speichern
-      </button>
-    </div>
-  `);
-}
-
-async function saveMyPlayerData(){
-  const number=document.getElementById('myPlayerNumber')?.value.trim()||'';
-  const position=document.getElementById('myPlayerPosition')?.value||'';
-  const shot=document.getElementById('myPlayerShot')?.value||'';
-  const birthdayRaw=document.getElementById('myPlayerBirthday')?.value.trim()||'';
-
-  if(number && (!/^\d{1,2}$/.test(number) || Number(number)<0 || Number(number)>99)){
-    alert('Bitte eine Trikotnummer zwischen 0 und 99 eingeben.');
-    return;
-  }
-
-  if(!['Stürmer','Verteidiger','Goalie'].includes(position)){
-    alert('Bitte eine gültige Position auswählen.');
-    return;
-  }
-
-  if(!['Links','Rechts'].includes(shot)){
-    alert('Bitte eine gültige Schusshand auswählen.');
-    return;
-  }
-
-  const birthday=birthdayToIso(birthdayRaw);
-  if(birthdayRaw && birthday===null){
-    alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
-    return;
-  }
-
-  const {data:result,error}=await cloudClient.rpc('update_my_player_data',{
-    new_jersey_number:number||null,
-    new_position:position,
-    new_shot:shot,
-    new_birthday:birthday||null
-  });
-
-  if(error){
-    alert('Deine Daten konnten nicht gespeichert werden: '+error.message);
-    return;
-  }
-
-  if(!result?.ok){
-    alert(result?.error||'Deine Daten konnten nicht gespeichert werden.');
-    return;
-  }
-
-  closeModal();
-  await loadPlayerPortal();
-  alert('Deine Spielerdaten wurden gespeichert.');
-}
-
 async function loadPlayerPortal(){
   ensurePlayerPortalTheme();
   const app=document.getElementById('playerPilotApp');
@@ -4163,51 +3686,12 @@ async function loadPlayerPortal(){
           </div>
         </div>
 
-        <div class="row" style="gap:8px">
-          <button class="btn soft" style="
-            background:rgba(255,255,255,.13);
-            color:#fff;
-            border-color:rgba(255,255,255,.26);
-          " onclick="openMyPlayerData()">
-            👤 Meine Daten
-          </button>
-
-          <button class="btn soft" style="
-            background:rgba(255,255,255,.13);
-            color:#fff;
-            border-color:rgba(255,255,255,.26);
-          " onclick="openCalendarHelp()">
-            ❓ Hilfe Kalenderexport
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="player-portal-card" style="padding:14px 18px">
-      <div style="
-        display:flex;
-        flex-wrap:wrap;
-        align-items:center;
-        justify-content:space-between;
-        gap:12px;
-      ">
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          <span class="player-role-badge">
-            #${playerProfileData().jerseyNumber||'–'}
-          </span>
-          <span class="player-role-badge">
-            ${playerProfileData().position||'Position offen'}
-          </span>
-          <span class="player-role-badge">
-            Schuss ${playerProfileData().shot||'–'}
-          </span>
-          <span class="player-role-badge">
-            ${playerProfileData().birthday?birthdayToDisplay(playerProfileData().birthday):'Geburtsdatum offen'}
-          </span>
-        </div>
-
-        <button class="btn soft" onclick="openMyPlayerData()">
-          Daten bearbeiten
+        <button class="btn soft" style="
+          background:rgba(255,255,255,.13);
+          color:#fff;
+          border-color:rgba(255,255,255,.26);
+        " onclick="openCalendarHelp()">
+          ❓ Hilfe Kalenderexport
         </button>
       </div>
     </div>
@@ -4955,19 +4439,6 @@ function deleteAvailability(id){
 }
 
 function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
-function initializeBirthdayInput(){
-  const input=document.getElementById('playerBirthday');
-  if(!input)return;
-  input.type='text';
-  input.inputMode='numeric';
-  input.placeholder='TT.MM.JJJJ';
-  input.maxLength=10;
-  input.autocomplete='bday';
-}
-
 renderAll();
 initCloud();
-requestAnimationFrame(()=>{
-  initializeSeriesDayTimes();
-  initializeBirthdayInput();
-});
+requestAnimationFrame(initializeSeriesDayTimes);
