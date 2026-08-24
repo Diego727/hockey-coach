@@ -50,6 +50,83 @@ let cloudSaveTimer=null;
 let cloudSaving=false;
 let lastCloudUpdated='';
 let cloudPollTimer=null;
+
+// Schutz vor Überschreiben einer gerade vorgenommenen Coach-Änderung
+// durch einen älteren Spielerportal-Status beim 5-Sekunden-Polling.
+const coachAttendanceEdits=new Map();
+
+function coachAttendanceEditKey(teamKey,eventId,playerId){
+  return `${teamKey||''}|${eventId||''}|${playerId||''}`;
+}
+
+function rememberCoachAttendanceEdit(teamKey,eventId,playerId,status){
+  coachAttendanceEdits.set(
+    coachAttendanceEditKey(teamKey,eventId,playerId),
+    {status,at:Date.now()}
+  );
+}
+
+function recentCoachAttendanceEdit(teamKey,eventId,playerId){
+  const key=coachAttendanceEditKey(teamKey,eventId,playerId);
+  const edit=coachAttendanceEdits.get(key);
+
+  if(!edit)return null;
+
+  // Genug Zeit lassen, bis Cloud + player_event_status synchron sind.
+  if(Date.now()-edit.at>30000){
+    coachAttendanceEdits.delete(key);
+    return null;
+  }
+
+  return edit;
+}
+
+async function persistCoachPlayerStatus(eventId,playerId,status){
+  if(!activeTeamKey||!eventId||!playerId||!cloudUser)return;
+
+  try{
+    const {data:result,error}=await cloudClient.rpc(
+      'set_coach_player_status',
+      {
+        target_event_id:eventId,
+        target_player_ref:playerId,
+        target_team_key:activeTeamKey,
+        new_status:status
+      }
+    );
+
+    if(error){
+      console.warn(
+        'Coach-Status konnte nicht zusätzlich ins Spielerportal gespeichert werden',
+        error
+      );
+      return;
+    }
+
+    if(result?.ok){
+      const key=coachAttendanceEditKey(
+        activeTeamKey,
+        eventId,
+        playerId
+      );
+
+      const current=coachAttendanceEdits.get(key);
+
+      if(current&&current.status===status){
+        // Noch kurz schützen, falls parallel bereits ein Poll unterwegs ist.
+        setTimeout(()=>{
+          const latest=coachAttendanceEdits.get(key);
+          if(latest&&latest.status===status){
+            coachAttendanceEdits.delete(key);
+          }
+        },5000);
+      }
+    }
+  }catch(error){
+    console.warn('Coach-Status Synchronisation fehlgeschlagen',error);
+  }
+}
+
 const labels={
  training:{plural:'Trainings',single:'Training',icon:'🏒'},
  game:{plural:'Spiele',single:'Spiel',icon:'🥅'},
@@ -546,18 +623,65 @@ function selectEvent(id){
 function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(selectedId===id)selectedId=null;save()}
 function setStatus(pid,status){
   if(!selectedId)return;
-  data.attendance[selectedId]||={};
-  data.attendance[selectedId][pid]=status;
-  if(status!=='present' && data.lineups?.[selectedId]) clearPlayerFromLineup(selectedId,pid);
-  save()
+
+  const eventId=selectedId;
+
+  data.attendance[eventId]||={};
+  data.attendance[eventId][pid]=status;
+
+  rememberCoachAttendanceEdit(
+    activeTeamKey,
+    eventId,
+    pid,
+    status
+  );
+
+  if(status!=='present'&&data.lineups?.[eventId]){
+    clearPlayerFromLineup(eventId,pid);
+  }
+
+  // Sofort lokal + club_state speichern.
+  save();
+
+  // Parallel denselben Wert in player_event_status schreiben.
+  // Dadurch kann ein alter Portalwert die Coach-Änderung nicht zurücksetzen.
+  persistCoachPlayerStatus(eventId,pid,status);
 }
+
 function setAllAttendance(eventId,status){
   data.attendance[eventId] ||= {};
+
+  const playerIds=[];
+
   for(const p of data.players){
     data.attendance[eventId][p.id]=status;
-    if(status!=='present'&&data.lineups?.[eventId])clearPlayerFromLineup(eventId,p.id);
+
+    rememberCoachAttendanceEdit(
+      activeTeamKey,
+      eventId,
+      p.id,
+      status
+    );
+
+    playerIds.push(p.id);
+
+    if(status!=='present'&&data.lineups?.[eventId]){
+      clearPlayerFromLineup(eventId,p.id);
+    }
   }
+
   save();
+
+  // Nacheinander synchronisieren, um Supabase nicht unnötig parallel zu belasten.
+  (async()=>{
+    for(const playerId of playerIds){
+      await persistCoachPlayerStatus(
+        eventId,
+        playerId,
+        status
+      );
+    }
+  })();
 }
 
 function addPlayer(){
@@ -2415,12 +2539,25 @@ function availableTrainingMonths(){
 function setQuickMonth(month){quickMonth=month;renderQuickPlanner()}
 function toggleQuickAttendance(eventId,playerId){
   data.attendance[eventId] ||= {};
+
   const current=data.attendance[eventId][playerId]||'present';
-  data.attendance[eventId][playerId]=current==='absent'?'present':'absent';
-  if(data.attendance[eventId][playerId]!=='present'&&data.lineups?.[eventId]){
+  const nextStatus=current==='absent'?'present':'absent';
+
+  data.attendance[eventId][playerId]=nextStatus;
+
+  rememberCoachAttendanceEdit(
+    activeTeamKey,
+    eventId,
+    playerId,
+    nextStatus
+  );
+
+  if(nextStatus!=='present'&&data.lineups?.[eventId]){
     clearPlayerFromLineup(eventId,playerId);
   }
+
   save();
+  persistCoachPlayerStatus(eventId,playerId,nextStatus);
 }
 function renderQuickPlanner(){
   const el=document.getElementById('quickPlanner');
@@ -4102,7 +4239,7 @@ async function syncPlayerStatusesIntoCoachView(){
 
   const {data:rows,error}=await cloudClient
     .from('player_event_status')
-    .select('event_id,status,player_profiles!inner(player_ref,team_key,club_id)')
+    .select('event_id,status,updated_at,player_profiles!inner(player_ref,team_key,club_id)')
     .eq('player_profiles.club_id',SHARED_CLUB_ID);
 
   if(error){
@@ -4111,21 +4248,50 @@ async function syncPlayerStatusesIntoCoachView(){
   }
 
   let changed=false;
+
   for(const row of rows||[]){
     const profile=row.player_profiles;
     const team=cloudRoot.teams?.[profile.team_key];
+
     if(!team||!profile.player_ref)continue;
 
+    const protectedEdit=recentCoachAttendanceEdit(
+      profile.team_key,
+      row.event_id,
+      profile.player_ref
+    );
+
+    // Wenn der Coach gerade geändert hat und Supabase noch einen älteren
+    // Spielerportal-Wert liefert, darf dieser nicht zurückgeschrieben werden.
+    if(protectedEdit&&protectedEdit.status!==row.status){
+      continue;
+    }
+
     team.attendance[row.event_id] ||= {};
+
     if(team.attendance[row.event_id][profile.player_ref]!==row.status){
       team.attendance[row.event_id][profile.player_ref]=row.status;
       changed=true;
+    }
+
+    // Sobald beide Quellen denselben Wert haben, ist die Synchronisation fertig.
+    if(protectedEdit&&protectedEdit.status===row.status){
+      coachAttendanceEdits.delete(
+        coachAttendanceEditKey(
+          profile.team_key,
+          row.event_id,
+          profile.player_ref
+        )
+      );
     }
   }
 
   if(changed&&activeTeamKey){
     data=cloudRoot.teams[activeTeamKey];
-    localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
+    localStorage.setItem(
+      'hockeyCoachData_v13',
+      JSON.stringify(data)
+    );
     renderAll();
   }
 }
