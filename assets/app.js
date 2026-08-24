@@ -1,6 +1,33 @@
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
-const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+
+// Supabase-Einladungs-/Recovery-Link erkennen, bevor der Client die URL verarbeitet.
+const INITIAL_AUTH_HASH=window.location.hash||'';
+const INITIAL_AUTH_SEARCH=window.location.search||'';
+
+const INITIAL_AUTH_TYPE=(()=>{
+  try{
+    const hashParams=new URLSearchParams(INITIAL_AUTH_HASH.replace(/^#/,''));
+    const queryParams=new URLSearchParams(INITIAL_AUTH_SEARCH.replace(/^\?/,''));
+
+    return (
+      hashParams.get('type')||
+      queryParams.get('type')||
+      ''
+    ).toLowerCase();
+  }catch(_error){
+    return '';
+  }
+})();
+
+let inviteSetupRequested=
+  INITIAL_AUTH_TYPE==='invite'||
+  INITIAL_AUTH_TYPE==='recovery';
+
+const cloudClient=window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
 const SHARED_CLUB_ID='7c807357-d90b-4ca4-9d20-f61a82ff6065';
 const CALENDAR_FUNCTION_URL=
   `${SUPABASE_URL}/functions/v1/team-calendar`;
@@ -2169,7 +2196,7 @@ function renderPlayers(){
        onblur="changeBirthday('${p.id}',this.value,this)"
      >
      <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Einladungslink erstellen</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
    </div>`;
    playerAdminList.appendChild(row)
@@ -4765,61 +4792,156 @@ async function readEdgeFunctionError(error,result){
   return error?.message||'Unbekannter Fehler';
 }
 
+
 async function createPlayerAccessWithPassword(playerId){
   const player=data.players.find(p=>p.id===playerId);
   if(!player)return;
 
   const email=(player.email||'').trim().toLowerCase();
+
   if(!email){
     alert('Bitte zuerst eine Spieler-E-Mail hinterlegen.');
     return;
   }
 
-  const startPassword=prompt(
-    `Startpasswort für ${player.name} (mindestens 8 Zeichen):`
-  );
-  if(!startPassword)return;
-
-  if(startPassword.length<8){
-    alert('Das Startpasswort muss mindestens 8 Zeichen lang sein.');
-    return;
-  }
-
   try{
+    const redirectTo=window.location.origin+window.location.pathname;
+
     const {data:result,error}=await cloudClient.functions.invoke(
       'manage-player-user',
       {
-        headers:{
-          apikey:SUPABASE_PUBLISHABLE_KEY
-        },
         body:{
-          action:'create',
+          action:'create_link',
           clubId:SHARED_CLUB_ID,
           teamKey:activeTeamKey,
           playerRef:player.id,
           displayName:player.name,
           email,
-          startPassword
+          redirectTo
         }
       }
     );
 
     if(error||!result?.ok){
       const message=await readEdgeFunctionError(error,result);
-      alert('Zugang konnte nicht erstellt werden:\n\n'+message);
+      alert('Einladungslink konnte nicht erstellt werden:\n\n'+message);
       return;
     }
 
-    alert(
-      `Zugang erstellt.\n\nE-Mail: ${email}\nStartpasswort: ${startPassword}`
+    const inviteLink=result.inviteLink||'';
+
+    if(!inviteLink){
+      alert('Der Zugang wurde vorbereitet, aber es wurde kein Einladungslink zurückgegeben.');
+      return;
+    }
+
+    openPlayerInviteLinkModal(
+      player,
+      inviteLink,
+      Boolean(result.alreadyExists)
     );
   }catch(error){
     alert(
-      'Zugang konnte nicht erstellt werden:\n\n'+
+      'Einladungslink konnte nicht erstellt werden:\n\n'+
       (error instanceof Error?error.message:String(error))
     );
   }
 }
+
+function openPlayerInviteLinkModal(player,inviteLink,alreadyExists=false){
+  const safeName=String(player.name||'Spieler')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+
+  const jsName=String(player.name||'Spieler')
+    .replace(/\\/g,'\\\\')
+    .replace(/'/g,"\\'");
+
+  openModal(`
+    <h2>Spielerzugang – ${safeName}</h2>
+
+    <div class="stack">
+      <div style="
+        padding:12px;
+        border-radius:12px;
+        background:#e8f7ee;
+        color:#145b36;
+        border:1px solid #a9d8ba;
+      ">
+        <strong>${alreadyExists?'Zugang gefunden':'Zugang vorbereitet'}</strong>
+        <div style="margin-top:4px">
+          Diesen persönlichen Link kannst du direkt per WhatsApp,
+          SMS oder Mannschaftschat senden.
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Persönlicher Einladungslink</label>
+        <textarea
+          id="playerInviteLink"
+          readonly
+          style="min-height:115px"
+          onclick="this.select()">${inviteLink}</textarea>
+      </div>
+
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn primary" onclick="copyPlayerInviteLink()">
+          🔗 Link kopieren
+        </button>
+
+        <button class="btn soft" onclick="sharePlayerInviteLink('${jsName}')">
+          📲 Teilen
+        </button>
+
+        <button class="btn ghost" onclick="closeModal()">
+          Schliessen
+        </button>
+      </div>
+
+      <div class="muted">
+        Der Spieler öffnet den Link und legt danach sein eigenes Passwort fest.
+      </div>
+    </div>
+  `);
+}
+
+async function copyPlayerInviteLink(){
+  const link=document.getElementById('playerInviteLink')?.value||'';
+  if(!link)return;
+
+  try{
+    await navigator.clipboard.writeText(link);
+    alert('Einladungslink wurde kopiert.');
+  }catch(_error){
+    const field=document.getElementById('playerInviteLink');
+    field?.focus();
+    field?.select();
+    alert('Link ist markiert. Bitte kopieren.');
+  }
+}
+
+async function sharePlayerInviteLink(playerName){
+  const link=document.getElementById('playerInviteLink')?.value||'';
+  if(!link)return;
+
+  if(navigator.share){
+    try{
+      await navigator.share({
+        title:`SC Altstadt – Spielerzugang ${playerName}`,
+        text:'Hier ist dein persönlicher Zugang zur SC-Altstadt-Hockey-App:',
+        url:link
+      });
+      return;
+    }catch(error){
+      if(error?.name==='AbortError')return;
+    }
+  }
+
+  await copyPlayerInviteLink();
+}
+
 
 async function forceFirstPasswordChange(){
   if(cloudUser?.user_metadata?.force_password_change!==true)return false;
@@ -4832,6 +4954,233 @@ async function forceFirstPasswordChange(){
   cloudUser=data.user;
   alert('Passwort wurde geändert.');
   return false;
+}
+
+
+let passwordSetupVisible=false;
+
+function hidePasswordSetup(){
+  passwordSetupVisible=false;
+  document.getElementById('passwordSetupScreen')?.remove();
+}
+
+function showPasswordSetup(session){
+  if(!session?.user)return false;
+
+  passwordSetupVisible=true;
+
+  document.getElementById('authScreen')?.classList.add('hidden');
+  document.getElementById('coachModeApp')?.classList.add('hidden');
+  document.getElementById('playerPilotApp')?.classList.add('hidden');
+  document.getElementById('teamScreen')?.classList.add('hidden');
+
+  const teamSwitchBtn=document.getElementById('teamSwitchBtn');
+  const settingsBtn=document.getElementById('settingsBtn');
+
+  if(teamSwitchBtn)teamSwitchBtn.style.display='none';
+  if(settingsBtn)settingsBtn.style.display='none';
+
+  let screen=document.getElementById('passwordSetupScreen');
+
+  if(!screen){
+    screen=document.createElement('div');
+    screen.id='passwordSetupScreen';
+    screen.style.cssText=`
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      background:
+        radial-gradient(circle at 10% 0%,rgba(36,87,68,.18),transparent 30%),
+        linear-gradient(180deg,#eef5f2,#f9fbfa);
+    `;
+    document.body.appendChild(screen);
+  }
+
+  const email=session.user.email||'';
+
+  screen.innerHTML=`
+    <div style="
+      width:min(100%,460px);
+      background:#fff;
+      border:1px solid #d8e3de;
+      border-radius:22px;
+      box-shadow:0 20px 55px rgba(23,63,50,.16);
+      padding:24px;
+    ">
+      <div style="
+        width:54px;
+        height:54px;
+        border-radius:16px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        background:#173f32;
+        color:#fff;
+        font-size:26px;
+        margin-bottom:14px;
+      ">🏒</div>
+
+      <h2 style="margin:0 0 6px;color:#173f32">
+        Zugang einrichten
+      </h2>
+
+      <p style="margin:0 0 18px;color:#6e7974;line-height:1.5">
+        Lege jetzt dein persönliches Passwort für die SC-Altstadt-Hockey-App fest.
+      </p>
+
+      ${email?`
+        <div style="
+          padding:10px 12px;
+          border-radius:11px;
+          background:#f3f7f5;
+          color:#405149;
+          margin-bottom:14px;
+          font-size:14px;
+        ">
+          <strong>E-Mail:</strong> ${email}
+        </div>
+      `:''}
+
+      <div style="display:grid;gap:12px">
+        <label style="display:grid;gap:6px">
+          <span style="font-weight:800;color:#31413a">Neues Passwort</span>
+          <input
+            id="setupPassword1"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="Mindestens 8 Zeichen"
+            style="
+              width:100%;
+              box-sizing:border-box;
+              min-height:46px;
+              border:1px solid #cfded7;
+              border-radius:11px;
+              padding:10px 12px;
+              font-size:16px;
+            ">
+        </label>
+
+        <label style="display:grid;gap:6px">
+          <span style="font-weight:800;color:#31413a">Passwort wiederholen</span>
+          <input
+            id="setupPassword2"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="Passwort nochmals eingeben"
+            style="
+              width:100%;
+              box-sizing:border-box;
+              min-height:46px;
+              border:1px solid #cfded7;
+              border-radius:11px;
+              padding:10px 12px;
+              font-size:16px;
+            ">
+        </label>
+
+        <div id="setupPasswordMessage" style="
+          display:none;
+          padding:10px 12px;
+          border-radius:10px;
+          font-size:14px;
+        "></div>
+
+        <button
+          onclick="completePasswordSetup()"
+          style="
+            border:0;
+            border-radius:12px;
+            min-height:48px;
+            padding:11px 14px;
+            background:linear-gradient(135deg,#245744,#173f32);
+            color:#fff;
+            font-weight:900;
+            font-size:15px;
+            cursor:pointer;
+          ">
+          Zugang aktivieren
+        </button>
+      </div>
+    </div>
+  `;
+
+  requestAnimationFrame(()=>{
+    document.getElementById('setupPassword1')?.focus();
+  });
+
+  return true;
+}
+
+function showSetupPasswordMessage(text,isError=false){
+  const box=document.getElementById('setupPasswordMessage');
+  if(!box)return;
+
+  box.style.display='block';
+  box.style.background=isError?'#fdeaea':'#e8f7ee';
+  box.style.color=isError?'#9a2727':'#17623a';
+  box.textContent=text;
+}
+
+async function completePasswordSetup(){
+  const first=document.getElementById('setupPassword1')?.value||'';
+  const second=document.getElementById('setupPassword2')?.value||'';
+
+  if(first.length<8){
+    showSetupPasswordMessage(
+      'Bitte ein Passwort mit mindestens 8 Zeichen eingeben.',
+      true
+    );
+    return;
+  }
+
+  if(first!==second){
+    showSetupPasswordMessage(
+      'Die beiden Passwörter stimmen nicht überein.',
+      true
+    );
+    return;
+  }
+
+  showSetupPasswordMessage('Passwort wird gespeichert …');
+
+  const {error}=await cloudClient.auth.updateUser({
+    password:first,
+    data:{
+      password_setup_complete:true
+    }
+  });
+
+  if(error){
+    showSetupPasswordMessage(
+      'Passwort konnte nicht gespeichert werden: '+error.message,
+      true
+    );
+    return;
+  }
+
+  inviteSetupRequested=false;
+
+  try{
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.origin+window.location.pathname
+    );
+  }catch(_error){}
+
+  hidePasswordSetup();
+
+  const {
+    data:{session}
+  }=await cloudClient.auth.getSession();
+
+  await handleCloudSession(session);
 }
 
 async function handleCloudSession(session){
@@ -4853,6 +5202,17 @@ async function handleCloudSession(session){
   authScreen.classList.add('hidden');
   logoutBtn.style.display='inline-block';
   cloudReady=false;
+
+  if(
+    inviteSetupRequested &&
+    cloudUser &&
+    cloudUser.user_metadata?.password_setup_complete!==true
+  ){
+    showPasswordSetup(session);
+    return;
+  }
+
+  hidePasswordSetup();
 
   currentPlayerProfile=await getCurrentPlayerProfile();
 
@@ -4882,6 +5242,12 @@ async function initCloud(){
   const {data:{session}}=await cloudClient.auth.getSession();
   await handleCloudSession(session);
   cloudClient.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='PASSWORD_RECOVERY'){
+      inviteSetupRequested=true;
+      await handleCloudSession(session);
+      return;
+    }
+
     if(event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
       await handleCloudSession(session);
     }
