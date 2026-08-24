@@ -1,34 +1,6 @@
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
-
-// Wichtig: Marker des Supabase-Einladungs-/Recovery-Links erfassen,
-// bevor der Supabase-Client die URL verarbeitet.
-const INITIAL_AUTH_URL=window.location.href;
-const INITIAL_AUTH_HASH=window.location.hash||'';
-const INITIAL_AUTH_SEARCH=window.location.search||'';
-
-const INITIAL_AUTH_TYPE=(()=>{
-  try{
-    const hashParams=new URLSearchParams(INITIAL_AUTH_HASH.replace(/^#/,''));
-    const queryParams=new URLSearchParams(INITIAL_AUTH_SEARCH.replace(/^\?/,''));
-    return (
-      hashParams.get('type')||
-      queryParams.get('type')||
-      ''
-    ).toLowerCase();
-  }catch(_error){
-    return '';
-  }
-})();
-
-let inviteSetupRequested=
-  INITIAL_AUTH_TYPE==='invite'||
-  INITIAL_AUTH_TYPE==='recovery';
-
-const cloudClient=window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY
-);
+const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const SHARED_CLUB_ID='7c807357-d90b-4ca4-9d20-f61a82ff6065';
 const CALENDAR_FUNCTION_URL=
   `${SUPABASE_URL}/functions/v1/team-calendar`;
@@ -79,8 +51,8 @@ let cloudSaving=false;
 let lastCloudUpdated='';
 let cloudPollTimer=null;
 
-// Schutz vor Überschreiben einer gerade vorgenommenen Coach-Änderung
-// durch einen älteren Spielerportal-Status beim 5-Sekunden-Polling.
+// Verhindert, dass ein alter Spielerportal-Status eine gerade gemachte
+// Coach-Änderung während der Cloud-Synchronisation überschreibt.
 const coachAttendanceEdits=new Map();
 
 function coachAttendanceEditKey(teamKey,eventId,playerId){
@@ -100,7 +72,7 @@ function recentCoachAttendanceEdit(teamKey,eventId,playerId){
 
   if(!edit)return null;
 
-  // Genug Zeit lassen, bis Cloud + player_event_status synchron sind.
+  // Schutz lange genug, bis club_state + player_event_status sicher gespeichert sind.
   if(Date.now()-edit.at>30000){
     coachAttendanceEdits.delete(key);
     return null;
@@ -110,44 +82,27 @@ function recentCoachAttendanceEdit(teamKey,eventId,playerId){
 }
 
 async function persistCoachPlayerStatus(eventId,playerId,status){
-  if(!activeTeamKey||!eventId||!playerId||!cloudUser)return;
+  if(!activeTeamKey||!eventId||!playerId)return;
 
   try{
-    const {data:result,error}=await cloudClient.rpc(
-      'set_coach_player_status',
-      {
-        target_event_id:eventId,
-        target_player_ref:playerId,
-        target_team_key:activeTeamKey,
-        new_status:status
-      }
-    );
+    const {data:result,error}=await cloudClient.rpc('set_coach_player_status',{
+      target_event_id:eventId,
+      target_player_ref:playerId,
+      target_team_key:activeTeamKey,
+      new_status:status
+    });
 
     if(error){
-      console.warn(
-        'Coach-Status konnte nicht zusätzlich ins Spielerportal gespeichert werden',
-        error
-      );
+      console.warn('Coach-Status konnte nicht in player_event_status gespeichert werden',error);
       return;
     }
 
     if(result?.ok){
-      const key=coachAttendanceEditKey(
-        activeTeamKey,
-        eventId,
-        playerId
-      );
-
+      const key=coachAttendanceEditKey(activeTeamKey,eventId,playerId);
       const current=coachAttendanceEdits.get(key);
-
       if(current&&current.status===status){
-        // Noch kurz schützen, falls parallel bereits ein Poll unterwegs ist.
-        setTimeout(()=>{
-          const latest=coachAttendanceEdits.get(key);
-          if(latest&&latest.status===status){
-            coachAttendanceEdits.delete(key);
-          }
-        },5000);
+        // Noch kurz behalten, damit ein paralleler Poll nicht dazwischenfunkt.
+        setTimeout(()=>coachAttendanceEdits.delete(key),5000);
       }
     }
   }catch(error){
@@ -649,31 +604,82 @@ function selectEvent(id){
   });
 }
 function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(selectedId===id)selectedId=null;save()}
+
+function editEvent(id){
+  const e=data.events.find(x=>x.id===id);
+  if(!e)return;
+
+  const opponent=e.opponent||e.title||'';
+  const title=e.type==='game'?'Spiel bearbeiten':`${labels[e.type]?.single||'Termin'} bearbeiten`;
+  const gameFields=e.type==='game'?`
+    <div class="field"><label>Gegner</label><input id="editEventOpponent" value="${opponent.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}"></div>
+    <div class="field"><label>Heim / Auswärts</label><select id="editEventHomeAway">
+      <option value="home" ${e.homeAway==='home'?'selected':''}>Heim</option>
+      <option value="away" ${e.homeAway==='away'?'selected':''}>Auswärts</option>
+    </select></div>`:`
+    <div class="field"><label>Bezeichnung</label><input id="editEventTitle" value="${(e.title||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}"></div>`;
+
+  openModal(`<h2>${title}</h2><div class="stack">
+    <div class="field"><label>Datum</label><input id="editEventDate" type="date" value="${e.date||''}"></div>
+    <div class="field"><label>Uhrzeit</label><input id="editEventTime" type="time" value="${e.time||''}"></div>
+    ${gameFields}
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="btn soft" onclick="closeModal()">Abbrechen</button>
+      <button class="btn primary" onclick="saveEventEdit('${e.id}')">Änderungen speichern</button>
+    </div>
+  </div>`);
+}
+
+function saveEventEdit(id){
+  const e=data.events.find(x=>x.id===id);
+  if(!e)return;
+  const date=document.getElementById('editEventDate')?.value;
+  const time=document.getElementById('editEventTime')?.value;
+  if(!date)return alert('Bitte Datum wählen.');
+  if(!time)return alert('Bitte Uhrzeit wählen.');
+
+  e.date=date;
+  e.time=time;
+  if(e.type==='game'){
+    const opponent=document.getElementById('editEventOpponent')?.value.trim()||'';
+    if(!opponent)return alert('Bitte Gegner eingeben.');
+    e.opponent=opponent;
+    e.title=opponent;
+    e.homeAway=document.getElementById('editEventHomeAway')?.value||'home';
+  }else{
+    e.title=document.getElementById('editEventTitle')?.value.trim()||'';
+  }
+
+  // Die ID bleibt absichtlich unverändert: Anwesenheit, Aufstellung,
+  // Coachboard und Spielerportal-Zuordnungen bleiben dadurch erhalten.
+  selectedId=id;
+  closeModal();
+  save();
+}
+
 function setStatus(pid,status){
   if(!selectedId)return;
 
-  const eventId=selectedId;
-
-  data.attendance[eventId]||={};
-  data.attendance[eventId][pid]=status;
+  data.attendance[selectedId]||={};
+  data.attendance[selectedId][pid]=status;
 
   rememberCoachAttendanceEdit(
     activeTeamKey,
-    eventId,
+    selectedId,
     pid,
     status
   );
 
-  if(status!=='present'&&data.lineups?.[eventId]){
-    clearPlayerFromLineup(eventId,pid);
+  if(status!=='present' && data.lineups?.[selectedId]){
+    clearPlayerFromLineup(selectedId,pid);
   }
 
-  // Sofort lokal + club_state speichern.
+  // club_state sofort speichern
   save();
 
-  // Parallel denselben Wert in player_event_status schreiben.
-  // Dadurch kann ein alter Portalwert die Coach-Änderung nicht zurücksetzen.
-  persistCoachPlayerStatus(eventId,pid,status);
+  // denselben Stand zusätzlich im Spielerportal-Status speichern
+  // damit der nächste Poll die Coach-Änderung nicht zurücksetzt.
+  persistCoachPlayerStatus(selectedId,pid,status);
 }
 
 function setAllAttendance(eventId,status){
@@ -700,14 +706,11 @@ function setAllAttendance(eventId,status){
 
   save();
 
-  // Nacheinander synchronisieren, um Supabase nicht unnötig parallel zu belasten.
+  // Nacheinander schreiben, damit Supabase nicht mit vielen parallelen
+  // Requests belastet wird.
   (async()=>{
     for(const playerId of playerIds){
-      await persistCoachPlayerStatus(
-        eventId,
-        playerId,
-        status
-      );
+      await persistCoachPlayerStatus(eventId,playerId,status);
     }
   })();
 }
@@ -729,6 +732,12 @@ function addPlayer(){
  const position=positionInput.value;
  const shot=shotInput.value;
 
+ if(birthdayInput?.value && birthdayToIso(birthdayInput.value)===null){
+   alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
+   birthdayInput.focus();
+   return;
+ }
+
  if(!name){
    alert('Bitte Namen eingeben.');
    nameInput.focus();
@@ -742,7 +751,9 @@ function addPlayer(){
    position,
    shot,
    jerseyNumber:numberInput?.value.trim()||'',
-   birthday:birthdayInput?.value||'',
+   birthday:birthdayInput
+     ? (birthdayToIso(birthdayInput.value)===null?'':birthdayToIso(birthdayInput.value))
+     : '',
    email:emailInput?.value.trim()||''
  };
 
@@ -766,7 +777,78 @@ function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
-function changeBirthday(id,birthday){const p=data.players.find(x=>x.id===id);if(p){p.birthday=birthday;save()}}
+function birthdayToDisplay(value){
+  if(!value)return '';
+  const match=String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(match)return `${match[3]}.${match[2]}.${match[1]}`;
+  return String(value);
+}
+
+function birthdayToIso(value){
+  const raw=String(value||'').trim();
+  if(!raw)return '';
+
+  let match=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(match){
+    const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+    const currentYear=new Date().getFullYear();
+
+    if(year<1900 || year>currentYear){
+      return null;
+    }
+
+    const date=new Date(year,month-1,day);
+    if(date.getFullYear()===year && date.getMonth()===month-1 && date.getDate()===day){
+      return raw;
+    }
+    return null;
+  }
+
+  match=raw.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})$/);
+  if(!match)return null;
+
+  const day=Number(match[1]);
+  const month=Number(match[2]);
+  const year=Number(match[3]);
+  const currentYear=new Date().getFullYear();
+
+  if(year<1900 || year>currentYear){
+    return null;
+  }
+
+  const date=new Date(year,month-1,day);
+
+  if(date.getFullYear()!==year || date.getMonth()!==month-1 || date.getDate()!==day){
+    return null;
+  }
+
+  return [
+    String(year).padStart(4,'0'),
+    String(month).padStart(2,'0'),
+    String(day).padStart(2,'0')
+  ].join('-');
+}
+
+function changeBirthday(id,birthday,inputElement=null){
+  const player=data.players.find(x=>x.id===id);
+  if(!player)return;
+
+  const iso=birthdayToIso(birthday);
+
+  if(iso===null){
+    alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
+    if(inputElement){
+      inputElement.value=birthdayToDisplay(player.birthday);
+      inputElement.focus();
+      inputElement.select();
+    }
+    return;
+  }
+
+  player.birthday=iso;
+  save();
+}
+
 function updatePlayerEmail(id,email){
   const player=data.players.find(p=>p.id===id);
   if(!player)return;
@@ -782,7 +864,12 @@ function updatePlayerEmail(id,email){
   player.email=normalizedEmail;
   save();
 }
-function fmtBirthday(s){if(!s)return '–';return new Intl.DateTimeFormat('de-CH',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
+function fmtBirthday(s){
+  if(!s)return '–';
+  const iso=birthdayToIso(s);
+  if(!iso)return s;
+  return birthdayToDisplay(iso);
+}
 
 
 function filterAttendancePlayers(query){
@@ -1642,7 +1729,7 @@ function renderEvents(){
    (sorted.length?'':'<p class="muted">Noch keine Termine vorhanden.</p>');
  for(const e of sorted){const a=data.attendance[e.id]||{},present=data.players.filter(p=>a[p.id]==='present').length,absent=data.players.filter(p=>a[p.id]==='absent').length;const div=document.createElement('div');div.className='event '+(selectedId===e.id?'active':'');div.onclick=()=>selectEvent(e.id);div.innerHTML=`<div class="date">${labels[e.type].icon} ${fmtDate(e.date)} · ${e.time}</div><small>${e.type==='game'
   ? `${gameOpponent(e)} · ${gameHomeAwayLabel(e)} · `
-  : (e.title?e.title+' · ':'')}${present} dabei · ${absent} nicht dabei</small><button class="btn danger" style="float:right;margin-top:-34px;padding:6px 8px" onclick="event.stopPropagation();deleteEvent('${e.id}')">Löschen</button>`;list.appendChild(div)}
+  : (e.title?e.title+' · ':'')}${present} dabei · ${absent} nicht dabei</small><div style="float:right;margin-top:-34px;display:flex;gap:6px"><button class="btn soft" style="padding:6px 8px" onclick="event.stopPropagation();editEvent('${e.id}')">Bearbeiten</button><button class="btn danger" style="padding:6px 8px" onclick="event.stopPropagation();deleteEvent('${e.id}')">Löschen</button></div>`;list.appendChild(div)}
 }
 function renderSelected(){
  const e=data.events.find(x=>x.id===selectedId);
@@ -1936,9 +2023,19 @@ function renderPlayers(){
        <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
      </select>
      <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
-     <input type="date" value="${p.birthday||''}" onchange="changeBirthday('${p.id}',this.value)">
+     <input
+       type="text"
+       inputmode="numeric"
+       autocomplete="bday"
+       value="${birthdayToDisplay(p.birthday)}"
+       placeholder="TT.MM.JJJJ"
+       maxlength="10"
+       style="width:125px"
+       onchange="changeBirthday('${p.id}',this.value,this)"
+       onblur="changeBirthday('${p.id}',this.value,this)"
+     >
      <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Einladungslink erstellen</button>
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
    </div>`;
    playerAdminList.appendChild(row)
@@ -1981,7 +2078,10 @@ function ensureLineup(eventId){
 }
 function makeSlot(eventId,line,posKey,label,pid,isGoalie=false){
   const slot=document.createElement('div');
-  slot.className='slot';
+  slot.className='slot lineup-slot';
+  slot.dataset.line=String(line);
+  slot.dataset.pos=posKey;
+  slot.dataset.goalie=isGoalie?'1':'0';
   const player=data.players.find(p=>p.id===pid);
   slot.innerHTML=`<div class="slot-label">${label}</div>${player?`<div class="assigned">${player.name}</div><button class="remove" onclick="removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie})">Entfernen</button>`:'<div class="muted">Spieler hierher ziehen</div>'}`;
   slot.addEventListener('dragover',ev=>{ev.preventDefault();slot.classList.add('dragover')});
@@ -2061,6 +2161,7 @@ function renderLineup(eventId){
     rink.appendChild(row);
   }
   board.appendChild(rink);
+  requestAnimationFrame(()=>enableTouchLineupSelection(eventId));
 }
 function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
@@ -2567,25 +2668,12 @@ function availableTrainingMonths(){
 function setQuickMonth(month){quickMonth=month;renderQuickPlanner()}
 function toggleQuickAttendance(eventId,playerId){
   data.attendance[eventId] ||= {};
-
   const current=data.attendance[eventId][playerId]||'present';
-  const nextStatus=current==='absent'?'present':'absent';
-
-  data.attendance[eventId][playerId]=nextStatus;
-
-  rememberCoachAttendanceEdit(
-    activeTeamKey,
-    eventId,
-    playerId,
-    nextStatus
-  );
-
-  if(nextStatus!=='present'&&data.lineups?.[eventId]){
+  data.attendance[eventId][playerId]=current==='absent'?'present':'absent';
+  if(data.attendance[eventId][playerId]!=='present'&&data.lineups?.[eventId]){
     clearPlayerFromLineup(eventId,playerId);
   }
-
   save();
-  persistCoachPlayerStatus(eventId,playerId,nextStatus);
 }
 function renderQuickPlanner(){
   const el=document.getElementById('quickPlanner');
@@ -3697,6 +3785,117 @@ function playerPortalStatusPresentation(status){
 let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
 
+
+function playerProfileData(){
+  return currentPlayerSchedule?.player_data||{};
+}
+
+function openMyPlayerData(){
+  const player=playerProfileData();
+
+  openModal(`
+    <h2>Meine Daten</h2>
+
+    <div class="stack">
+      <p class="muted">
+        Hier kannst du deine persönlichen Spielerdaten selbst aktualisieren.
+      </p>
+
+      <div class="field">
+        <label>Trikotnummer</label>
+        <input
+          id="myPlayerNumber"
+          type="number"
+          min="0"
+          max="99"
+          value="${player.jerseyNumber||''}"
+          placeholder="z. B. 23">
+      </div>
+
+      <div class="field">
+        <label>Position</label>
+        <select id="myPlayerPosition">
+          <option value="Stürmer" ${player.position==='Stürmer'?'selected':''}>Stürmer</option>
+          <option value="Verteidiger" ${player.position==='Verteidiger'?'selected':''}>Verteidiger</option>
+          <option value="Goalie" ${player.position==='Goalie'?'selected':''}>Goalie</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Schusshand</label>
+        <select id="myPlayerShot">
+          <option value="Links" ${player.shot==='Links'?'selected':''}>Links</option>
+          <option value="Rechts" ${player.shot==='Rechts'?'selected':''}>Rechts</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Geburtsdatum</label>
+        <input
+          id="myPlayerBirthday"
+          type="text"
+          inputmode="numeric"
+          maxlength="10"
+          placeholder="TT.MM.JJJJ"
+          value="${birthdayToDisplay(player.birthday||'')}">
+      </div>
+
+      <button class="btn primary" onclick="saveMyPlayerData()">
+        Speichern
+      </button>
+    </div>
+  `);
+}
+
+async function saveMyPlayerData(){
+  const number=document.getElementById('myPlayerNumber')?.value.trim()||'';
+  const position=document.getElementById('myPlayerPosition')?.value||'';
+  const shot=document.getElementById('myPlayerShot')?.value||'';
+  const birthdayRaw=document.getElementById('myPlayerBirthday')?.value.trim()||'';
+
+  if(number && (!/^\d{1,2}$/.test(number) || Number(number)<0 || Number(number)>99)){
+    alert('Bitte eine Trikotnummer zwischen 0 und 99 eingeben.');
+    return;
+  }
+
+  if(!['Stürmer','Verteidiger','Goalie'].includes(position)){
+    alert('Bitte eine gültige Position auswählen.');
+    return;
+  }
+
+  if(!['Links','Rechts'].includes(shot)){
+    alert('Bitte eine gültige Schusshand auswählen.');
+    return;
+  }
+
+  const birthday=birthdayToIso(birthdayRaw);
+  if(birthdayRaw && birthday===null){
+    alert('Bitte das Geburtsdatum als TT.MM.JJJJ mit vierstelliger Jahreszahl eingeben, z. B. 23.01.1995.');
+    return;
+  }
+
+  const {data:result,error}=await cloudClient.rpc('update_my_player_data',{
+    new_jersey_number:number||null,
+    new_position:position,
+    new_shot:shot,
+    new_birthday:birthday||null
+  });
+
+  if(error){
+    alert('Deine Daten konnten nicht gespeichert werden: '+error.message);
+    return;
+  }
+
+  if(!result?.ok){
+    alert(result?.error||'Deine Daten konnten nicht gespeichert werden.');
+    return;
+  }
+
+  closeModal();
+  await loadPlayerPortal();
+  alert('Deine Spielerdaten wurden gespeichert.');
+}
+
 async function loadPlayerPortal(){
   ensurePlayerPortalTheme();
   const app=document.getElementById('playerPilotApp');
@@ -3851,12 +4050,51 @@ async function loadPlayerPortal(){
           </div>
         </div>
 
-        <button class="btn soft" style="
-          background:rgba(255,255,255,.13);
-          color:#fff;
-          border-color:rgba(255,255,255,.26);
-        " onclick="openCalendarHelp()">
-          ❓ Hilfe Kalenderexport
+        <div class="row" style="gap:8px">
+          <button class="btn soft" style="
+            background:rgba(255,255,255,.13);
+            color:#fff;
+            border-color:rgba(255,255,255,.26);
+          " onclick="openMyPlayerData()">
+            👤 Meine Daten
+          </button>
+
+          <button class="btn soft" style="
+            background:rgba(255,255,255,.13);
+            color:#fff;
+            border-color:rgba(255,255,255,.26);
+          " onclick="openCalendarHelp()">
+            ❓ Hilfe Kalenderexport
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="player-portal-card" style="padding:14px 18px">
+      <div style="
+        display:flex;
+        flex-wrap:wrap;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+      ">
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <span class="player-role-badge">
+            #${playerProfileData().jerseyNumber||'–'}
+          </span>
+          <span class="player-role-badge">
+            ${playerProfileData().position||'Position offen'}
+          </span>
+          <span class="player-role-badge">
+            Schuss ${playerProfileData().shot||'–'}
+          </span>
+          <span class="player-role-badge">
+            ${playerProfileData().birthday?birthdayToDisplay(playerProfileData().birthday):'Geburtsdatum offen'}
+          </span>
+        </div>
+
+        <button class="btn soft" onclick="openMyPlayerData()">
+          Daten bearbeiten
         </button>
       </div>
     </div>
@@ -4289,8 +4527,8 @@ async function syncPlayerStatusesIntoCoachView(){
       profile.player_ref
     );
 
-    // Wenn der Coach gerade geändert hat und Supabase noch einen älteren
-    // Spielerportal-Wert liefert, darf dieser nicht zurückgeschrieben werden.
+    // Coach hat diesen Spieler gerade geändert:
+    // alten Portalwert während der Synchronisation niemals darüber schreiben.
     if(protectedEdit&&protectedEdit.status!==row.status){
       continue;
     }
@@ -4302,7 +4540,7 @@ async function syncPlayerStatusesIntoCoachView(){
       changed=true;
     }
 
-    // Sobald beide Quellen denselben Wert haben, ist die Synchronisation fertig.
+    // Sobald DB und Coach denselben Stand haben, Schutz entfernen.
     if(protectedEdit&&protectedEdit.status===row.status){
       coachAttendanceEdits.delete(
         coachAttendanceEditKey(
@@ -4316,10 +4554,7 @@ async function syncPlayerStatusesIntoCoachView(){
 
   if(changed&&activeTeamKey){
     data=cloudRoot.teams[activeTeamKey];
-    localStorage.setItem(
-      'hockeyCoachData_v13',
-      JSON.stringify(data)
-    );
+    localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
     renderAll();
   }
 }
@@ -4375,139 +4610,60 @@ async function readEdgeFunctionError(error,result){
   return error?.message||'Unbekannter Fehler';
 }
 
-
 async function createPlayerAccessWithPassword(playerId){
   const player=data.players.find(p=>p.id===playerId);
   if(!player)return;
 
   const email=(player.email||'').trim().toLowerCase();
-
   if(!email){
     alert('Bitte zuerst eine Spieler-E-Mail hinterlegen.');
     return;
   }
 
-  try{
-    const redirectTo=window.location.origin+window.location.pathname;
+  const startPassword=prompt(
+    `Startpasswort für ${player.name} (mindestens 8 Zeichen):`
+  );
+  if(!startPassword)return;
 
+  if(startPassword.length<8){
+    alert('Das Startpasswort muss mindestens 8 Zeichen lang sein.');
+    return;
+  }
+
+  try{
     const {data:result,error}=await cloudClient.functions.invoke(
       'manage-player-user',
       {
+        headers:{
+          apikey:SUPABASE_PUBLISHABLE_KEY
+        },
         body:{
-          action:'create_link',
+          action:'create',
           clubId:SHARED_CLUB_ID,
           teamKey:activeTeamKey,
           playerRef:player.id,
           displayName:player.name,
           email,
-          redirectTo
+          startPassword
         }
       }
     );
 
     if(error||!result?.ok){
       const message=await readEdgeFunctionError(error,result);
-      alert('Einladungslink konnte nicht erstellt werden:\n\n'+message);
+      alert('Zugang konnte nicht erstellt werden:\n\n'+message);
       return;
     }
 
-    const inviteLink=result.inviteLink||'';
-
-    if(!inviteLink){
-      alert('Der Zugang wurde vorbereitet, aber es wurde kein Einladungslink zurückgegeben.');
-      return;
-    }
-
-    openPlayerInviteLinkModal(player,inviteLink,result.alreadyExists);
+    alert(
+      `Zugang erstellt.\n\nE-Mail: ${email}\nStartpasswort: ${startPassword}`
+    );
   }catch(error){
     alert(
-      'Einladungslink konnte nicht erstellt werden:\n\n'+
+      'Zugang konnte nicht erstellt werden:\n\n'+
       (error instanceof Error?error.message:String(error))
     );
   }
-}
-
-function openPlayerInviteLinkModal(player,inviteLink,alreadyExists=false){
-  openModal(`
-    <h2>Spielerzugang – ${player.name}</h2>
-
-    <div class="stack">
-      <div style="
-        padding:12px;
-        border-radius:12px;
-        background:#e8f7ee;
-        color:#145b36;
-        border:1px solid #a9d8ba;
-      ">
-        <strong>${alreadyExists?'Zugang gefunden':'Zugang vorbereitet'}</strong>
-        <div style="margin-top:4px">
-          Diesen persönlichen Link kannst du direkt per WhatsApp, SMS oder Mannschaftschat senden.
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Persönlicher Einladungslink</label>
-        <textarea
-          id="playerInviteLink"
-          readonly
-          style="min-height:115px"
-          onclick="this.select()">${inviteLink}</textarea>
-      </div>
-
-      <div class="row" style="gap:8px;flex-wrap:wrap">
-        <button class="btn primary" onclick="copyPlayerInviteLink()">
-          🔗 Link kopieren
-        </button>
-
-        <button class="btn soft" onclick="sharePlayerInviteLink('${player.name.replace(/'/g,"\\'")}')">
-          📲 Teilen
-        </button>
-
-        <button class="btn ghost" onclick="closeModal()">
-          Schliessen
-        </button>
-      </div>
-
-      <div class="muted">
-        Der Spieler öffnet den Link und legt danach sein eigenes Passwort fest.
-      </div>
-    </div>
-  `);
-}
-
-async function copyPlayerInviteLink(){
-  const link=document.getElementById('playerInviteLink')?.value||'';
-  if(!link)return;
-
-  try{
-    await navigator.clipboard.writeText(link);
-    alert('Einladungslink wurde kopiert.');
-  }catch(_error){
-    const field=document.getElementById('playerInviteLink');
-    field?.focus();
-    field?.select();
-    alert('Link ist markiert. Bitte kopieren.');
-  }
-}
-
-async function sharePlayerInviteLink(playerName){
-  const link=document.getElementById('playerInviteLink')?.value||'';
-  if(!link)return;
-
-  if(navigator.share){
-    try{
-      await navigator.share({
-        title:`SC Altstadt – Spielerzugang ${playerName}`,
-        text:`Hier ist dein persönlicher Zugang zur SC-Altstadt-Hockey-App:`,
-        url:link
-      });
-      return;
-    }catch(error){
-      if(error?.name==='AbortError')return;
-    }
-  }
-
-  await copyPlayerInviteLink();
 }
 
 async function forceFirstPasswordChange(){
@@ -4521,241 +4677,6 @@ async function forceFirstPasswordChange(){
   cloudUser=data.user;
   alert('Passwort wurde geändert.');
   return false;
-}
-
-
-let passwordSetupVisible=false;
-
-function hidePasswordSetup(){
-  passwordSetupVisible=false;
-  document.getElementById('passwordSetupScreen')?.remove();
-}
-
-function showPasswordSetup(session){
-  if(!session?.user)return false;
-
-  passwordSetupVisible=true;
-
-  const authScreen=document.getElementById('authScreen');
-  const coach=document.getElementById('coachModeApp');
-  const player=document.getElementById('playerPilotApp');
-  const teamScreen=document.getElementById('teamScreen');
-
-  authScreen?.classList.add('hidden');
-  coach?.classList.add('hidden');
-  player?.classList.add('hidden');
-  teamScreen?.classList.add('hidden');
-
-  document.getElementById('teamSwitchBtn').style.display='none';
-  document.getElementById('settingsBtn').style.display='none';
-
-  let screen=document.getElementById('passwordSetupScreen');
-
-  if(!screen){
-    screen=document.createElement('div');
-    screen.id='passwordSetupScreen';
-    screen.style.cssText=`
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:20px;
-      background:
-        radial-gradient(circle at 10% 0%,rgba(36,87,68,.18),transparent 30%),
-        linear-gradient(180deg,#eef5f2,#f9fbfa);
-    `;
-    document.body.appendChild(screen);
-  }
-
-  const email=session.user.email||'';
-
-  screen.innerHTML=`
-    <div style="
-      width:min(100%,460px);
-      background:#fff;
-      border:1px solid #d8e3de;
-      border-radius:22px;
-      box-shadow:0 20px 55px rgba(23,63,50,.16);
-      padding:24px;
-    ">
-      <div style="
-        width:54px;
-        height:54px;
-        border-radius:16px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        background:#173f32;
-        color:#fff;
-        font-size:26px;
-        margin-bottom:14px;
-      ">🏒</div>
-
-      <h2 style="margin:0 0 6px;color:#173f32">
-        Zugang einrichten
-      </h2>
-
-      <p style="margin:0 0 18px;color:#6e7974;line-height:1.5">
-        Lege jetzt dein persönliches Passwort für die SC-Altstadt-Hockey-App fest.
-      </p>
-
-      ${email?`
-        <div style="
-          padding:10px 12px;
-          border-radius:11px;
-          background:#f3f7f5;
-          color:#405149;
-          margin-bottom:14px;
-          font-size:14px;
-        ">
-          <strong>E-Mail:</strong> ${email}
-        </div>
-      `:''}
-
-      <div style="display:grid;gap:12px">
-        <label style="display:grid;gap:6px">
-          <span style="font-weight:800;color:#31413a">Neues Passwort</span>
-          <input
-            id="setupPassword1"
-            type="password"
-            autocomplete="new-password"
-            minlength="8"
-            placeholder="Mindestens 8 Zeichen"
-            style="
-              width:100%;
-              box-sizing:border-box;
-              min-height:46px;
-              border:1px solid #cfded7;
-              border-radius:11px;
-              padding:10px 12px;
-              font-size:16px;
-            ">
-        </label>
-
-        <label style="display:grid;gap:6px">
-          <span style="font-weight:800;color:#31413a">Passwort wiederholen</span>
-          <input
-            id="setupPassword2"
-            type="password"
-            autocomplete="new-password"
-            minlength="8"
-            placeholder="Passwort nochmals eingeben"
-            style="
-              width:100%;
-              box-sizing:border-box;
-              min-height:46px;
-              border:1px solid #cfded7;
-              border-radius:11px;
-              padding:10px 12px;
-              font-size:16px;
-            ">
-        </label>
-
-        <div id="setupPasswordMessage" style="
-          display:none;
-          padding:10px 12px;
-          border-radius:10px;
-          font-size:14px;
-        "></div>
-
-        <button
-          onclick="completePasswordSetup()"
-          style="
-            border:0;
-            border-radius:12px;
-            min-height:48px;
-            padding:11px 14px;
-            background:linear-gradient(135deg,#245744,#173f32);
-            color:#fff;
-            font-weight:900;
-            font-size:15px;
-            cursor:pointer;
-          ">
-          Zugang aktivieren
-        </button>
-      </div>
-    </div>
-  `;
-
-  requestAnimationFrame(()=>{
-    document.getElementById('setupPassword1')?.focus();
-  });
-
-  return true;
-}
-
-function showSetupPasswordMessage(text,isError=false){
-  const box=document.getElementById('setupPasswordMessage');
-  if(!box)return;
-
-  box.style.display='block';
-  box.style.background=isError?'#fdeaea':'#e8f7ee';
-  box.style.color=isError?'#9a2727':'#17623a';
-  box.textContent=text;
-}
-
-async function completePasswordSetup(){
-  const first=document.getElementById('setupPassword1')?.value||'';
-  const second=document.getElementById('setupPassword2')?.value||'';
-
-  if(first.length<8){
-    showSetupPasswordMessage(
-      'Bitte ein Passwort mit mindestens 8 Zeichen eingeben.',
-      true
-    );
-    return;
-  }
-
-  if(first!==second){
-    showSetupPasswordMessage(
-      'Die beiden Passwörter stimmen nicht überein.',
-      true
-    );
-    return;
-  }
-
-  showSetupPasswordMessage('Passwort wird gespeichert …');
-
-  const {data:updated,error}=await cloudClient.auth.updateUser({
-    password:first,
-    data:{
-      password_setup_complete:true
-    }
-  });
-
-  if(error){
-    showSetupPasswordMessage(
-      'Passwort konnte nicht gespeichert werden: '+error.message,
-      true
-    );
-    return;
-  }
-
-  inviteSetupRequested=false;
-  passwordSetupVisible=false;
-
-  // Token aus der URL entfernen, damit die Einrichtungsseite beim nächsten
-  // Öffnen nicht nochmals erscheint.
-  try{
-    window.history.replaceState(
-      {},
-      document.title,
-      window.location.origin+window.location.pathname
-    );
-  }catch(_error){}
-
-  hidePasswordSetup();
-
-  showSetupPasswordMessage('Zugang wurde aktiviert.');
-
-  // Die Session ist bereits aktiv. Jetzt normalen App-Ablauf starten.
-  const {
-    data:{session}
-  }=await cloudClient.auth.getSession();
-
-  await handleCloudSession(session);
 }
 
 async function handleCloudSession(session){
@@ -4777,19 +4698,6 @@ async function handleCloudSession(session){
   authScreen.classList.add('hidden');
   logoutBtn.style.display='inline-block';
   cloudReady=false;
-
-  // Einladungs-/Recovery-Link: zuerst persönliches Passwort festlegen.
-  // Danach erst ins Spielerportal wechseln.
-  if(
-    inviteSetupRequested &&
-    cloudUser &&
-    cloudUser.user_metadata?.password_setup_complete!==true
-  ){
-    showPasswordSetup(session);
-    return;
-  }
-
-  hidePasswordSetup();
 
   currentPlayerProfile=await getCurrentPlayerProfile();
 
@@ -4819,12 +4727,6 @@ async function initCloud(){
   const {data:{session}}=await cloudClient.auth.getSession();
   await handleCloudSession(session);
   cloudClient.auth.onAuthStateChange(async(event,session)=>{
-    if(event==='PASSWORD_RECOVERY'){
-      inviteSetupRequested=true;
-      await handleCloudSession(session);
-      return;
-    }
-
     if(event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
       await handleCloudSession(session);
     }
@@ -4965,7 +4867,285 @@ function deleteAvailability(id){
   renderAvailabilityView();
 }
 
+
+function ensureMobileCoachTheme(){
+  if(document.getElementById('mobileCoachTheme'))return;
+
+  const style=document.createElement('style');
+  style.id='mobileCoachTheme';
+  style.textContent=`
+    @media(max-width:820px){
+      body{
+        overflow-x:hidden;
+      }
+
+      #coachModeApp{
+        padding:10px !important;
+      }
+
+      header,
+      .topbar,
+      .app-header{
+        position:sticky !important;
+        top:0;
+        z-index:1000;
+        padding:8px 10px !important;
+        gap:8px !important;
+        flex-wrap:wrap !important;
+      }
+
+      #headerTeamLogo{
+        width:42px !important;
+        height:42px !important;
+      }
+
+      #activeTeamLabel{
+        font-size:13px !important;
+        line-height:1.2 !important;
+      }
+
+      #coachModeApp .row,
+      #coachModeApp .section-head,
+      #coachModeApp .type-switch,
+      #coachModeApp .tabs{
+        flex-wrap:wrap !important;
+        gap:8px !important;
+      }
+
+      #coachModeApp .btn{
+        min-height:44px !important;
+        padding:10px 12px !important;
+        font-size:14px !important;
+      }
+
+      #coachModeApp input,
+      #coachModeApp select,
+      #coachModeApp textarea{
+        min-height:44px !important;
+        font-size:16px !important;
+        width:100%;
+        max-width:100%;
+        box-sizing:border-box;
+      }
+
+      #coachModeApp .card,
+      #coachModeApp .dashboard-card{
+        border-radius:16px !important;
+        padding:14px !important;
+      }
+
+      #coachModeApp .player{
+        grid-template-columns:1fr !important;
+        gap:10px !important;
+        align-items:start !important;
+      }
+
+      #coachModeApp .player > .row{
+        width:100% !important;
+        display:grid !important;
+        grid-template-columns:1fr 1fr !important;
+        gap:8px !important;
+      }
+
+      #coachModeApp .player > .row > *{
+        width:100% !important;
+        min-width:0 !important;
+      }
+
+      #coachModeApp .status{
+        display:grid !important;
+        grid-template-columns:repeat(3,1fr) !important;
+        gap:8px !important;
+        width:100% !important;
+      }
+
+      #coachModeApp .status button{
+        min-height:46px !important;
+        font-size:18px !important;
+      }
+
+      #coachModeApp .counts{
+        grid-template-columns:repeat(3,1fr) !important;
+        gap:8px !important;
+      }
+
+      #coachModeApp .count{
+        padding:10px !important;
+      }
+
+      #coachModeApp .attendance-quick-head .row{
+        display:grid !important;
+        grid-template-columns:1fr 1fr !important;
+      }
+
+      #coachModeApp .dashboard-grid{
+        grid-template-columns:1fr !important;
+      }
+
+      #coachModeApp .dashboard-kpis{
+        grid-template-columns:repeat(2,1fr) !important;
+        gap:8px !important;
+      }
+
+      #coachModeApp .availability-toolbar{
+        display:grid !important;
+        grid-template-columns:1fr !important;
+        gap:10px !important;
+      }
+
+      #coachModeApp .quick-table-wrap,
+      #coachModeApp .stats-table,
+      #coachModeApp .availability-table{
+        overflow-x:auto !important;
+        -webkit-overflow-scrolling:touch;
+      }
+
+      #appModal .modal-content{
+        width:calc(100vw - 20px) !important;
+        max-width:none !important;
+        max-height:88vh !important;
+        overflow:auto !important;
+        padding:16px !important;
+      }
+
+      .coach-calendar-shell{
+        min-width:760px !important;
+      }
+
+      #lineupBoard.lineup-scroll-zone{
+        max-height:62vh !important;
+        overflow:auto !important;
+        -webkit-overflow-scrolling:touch;
+      }
+
+      #lineupBoard .compact-five-row{
+        grid-template-columns:repeat(5,145px) !important;
+        min-width:765px !important;
+      }
+
+      #lineupBoard .goalies-zone{
+        grid-template-columns:repeat(2,170px) !important;
+        min-width:360px !important;
+      }
+
+      #playerPool.lineup-player-pool{
+        top:64px !important;
+        display:flex !important;
+        flex-wrap:nowrap !important;
+        overflow-x:auto !important;
+        -webkit-overflow-scrolling:touch;
+      }
+
+      #playerPool .drag-player{
+        flex:0 0 auto !important;
+        min-width:135px !important;
+        text-align:center !important;
+        user-select:none !important;
+        -webkit-user-select:none !important;
+        touch-action:manipulation !important;
+      }
+
+      #playerPool .drag-player.touch-selected{
+        outline:3px solid #173f32 !important;
+        outline-offset:2px !important;
+        transform:translateY(-1px);
+      }
+
+      #lineupBoard .lineup-slot{
+        min-height:92px !important;
+        touch-action:manipulation !important;
+      }
+
+      #lineupBoard .lineup-slot .remove{
+        min-height:34px !important;
+      }
+    }
+
+    @media(max-width:520px){
+      #coachModeApp .player > .row{
+        grid-template-columns:1fr !important;
+      }
+
+      #coachModeApp .attendance-quick-head .row{
+        grid-template-columns:1fr !important;
+      }
+
+      #coachModeApp .counts{
+        grid-template-columns:1fr !important;
+      }
+
+      #coachModeApp .dashboard-kpis{
+        grid-template-columns:1fr 1fr !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+let mobileSelectedLineupPlayerId=null;
+
+function enableTouchLineupSelection(eventId){
+  const pool=document.getElementById('playerPool');
+  const board=document.getElementById('lineupBoard');
+  if(!pool||!board)return;
+
+  pool.querySelectorAll('.drag-player').forEach(item=>{
+    item.addEventListener('click',()=>{
+      if(item.classList.contains('used'))return;
+
+      mobileSelectedLineupPlayerId=item.dataset.playerId||null;
+
+      pool.querySelectorAll('.drag-player')
+        .forEach(el=>el.classList.remove('touch-selected'));
+
+      if(mobileSelectedLineupPlayerId){
+        item.classList.add('touch-selected');
+      }
+    });
+  });
+
+  board.querySelectorAll('.lineup-slot').forEach(slot=>{
+    if(slot.dataset.touchReady==='1')return;
+    slot.dataset.touchReady='1';
+
+    slot.addEventListener('click',()=>{
+      if(!mobileSelectedLineupPlayerId)return;
+
+      const line=slot.dataset.line;
+      const pos=slot.dataset.pos;
+      const goalie=slot.dataset.goalie==='1';
+
+      if(!line||!pos)return;
+
+      assignToLineup(
+        eventId,
+        line==='goalies'?'goalies':Number(line),
+        pos,
+        mobileSelectedLineupPlayerId,
+        goalie
+      );
+
+      mobileSelectedLineupPlayerId=null;
+    });
+  });
+}
+
+
 function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
+function initializeBirthdayInput(){
+  const input=document.getElementById('playerBirthday');
+  if(!input)return;
+  input.type='text';
+  input.inputMode='numeric';
+  input.placeholder='TT.MM.JJJJ';
+  input.maxLength=10;
+  input.autocomplete='bday';
+}
+
+ensureMobileCoachTheme();
 renderAll();
 initCloud();
-requestAnimationFrame(initializeSeriesDayTimes);
+requestAnimationFrame(()=>{
+  initializeSeriesDayTimes();
+  initializeBirthdayInput();
+});
