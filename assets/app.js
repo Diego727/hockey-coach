@@ -779,6 +779,119 @@ function setAllAttendance(eventId,status){
   })();
 }
 
+
+const HOCKEY_POSITIONS=['LW','C','RW','LD','RD','Goalie'];
+
+function playerPositions(playerOrValue){
+  const raw=typeof playerOrValue==='string'
+    ? playerOrValue
+    : (playerOrValue?.position||playerOrValue?.role||'');
+
+  if(Array.isArray(raw)){
+    return raw.filter(Boolean);
+  }
+
+  return String(raw||'')
+    .split(/[,;/|]+/)
+    .map(value=>value.trim())
+    .filter(Boolean);
+}
+
+function normalizedPlayerPositions(playerOrValue){
+  const positions=playerPositions(playerOrValue);
+  const normalized=[];
+
+  for(const position of positions){
+    if(position==='Stürmer'){
+      if(!normalized.includes('Stürmer'))normalized.push('Stürmer');
+    }else if(position==='Verteidiger'){
+      if(!normalized.includes('Verteidiger'))normalized.push('Verteidiger');
+    }else if(HOCKEY_POSITIONS.includes(position)){
+      if(!normalized.includes(position))normalized.push(position);
+    }
+  }
+
+  return normalized;
+}
+
+function positionLabel(playerOrValue){
+  const positions=normalizedPlayerPositions(playerOrValue);
+  return positions.length?positions.join(' / '):'–';
+}
+
+function isGoaliePosition(playerOrValue){
+  const positions=normalizedPlayerPositions(playerOrValue);
+  return positions.includes('Goalie');
+}
+
+function isForwardPosition(playerOrValue){
+  const positions=normalizedPlayerPositions(playerOrValue);
+  return positions.some(position=>['LW','C','RW','Stürmer'].includes(position));
+}
+
+function isDefensePosition(playerOrValue){
+  const positions=normalizedPlayerPositions(playerOrValue);
+  return positions.some(position=>['LD','RD','Verteidiger'].includes(position));
+}
+
+function positionStorageValue(positions){
+  const clean=[...new Set((positions||[]).filter(position=>HOCKEY_POSITIONS.includes(position)))];
+  return clean.join(',');
+}
+
+function positionCheckboxesHtml(selectedValue,prefix){
+  const selected=normalizedPlayerPositions(selectedValue);
+
+  return `
+    <div style="
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:8px;
+    ">
+      ${HOCKEY_POSITIONS.map(position=>`
+        <label style="
+          display:flex;
+          align-items:center;
+          gap:7px;
+          padding:9px 10px;
+          border:1px solid #d7e0dc;
+          border-radius:10px;
+          cursor:pointer;
+          background:#fff;
+        ">
+          <input
+            type="checkbox"
+            name="${prefix}"
+            value="${position}"
+            ${selected.includes(position)?'checked':''}>
+          <strong>${position}</strong>
+        </label>
+      `).join('')}
+    </div>
+  `;
+}
+
+function selectedPositionCheckboxes(prefix){
+  return [...document.querySelectorAll(`input[name="${prefix}"]:checked`)]
+    .map(input=>input.value);
+}
+
+function upgradePlayerPositionInput(){
+  const select=document.getElementById('playerPosition');
+  if(!select||select.dataset.multiPositionReady==='1')return;
+
+  select.dataset.multiPositionReady='1';
+  select.multiple=true;
+  select.size=6;
+  select.innerHTML=HOCKEY_POSITIONS
+    .map(position=>`<option value="${position}">${position}</option>`)
+    .join('');
+
+  // Standardmässig nichts vorauswählen; der Coach kann eine oder mehrere
+  // Positionen mit Ctrl/Command bzw. auf Mobilgeräten direkt auswählen.
+  select.title='Mehrere Positionen können ausgewählt werden.';
+}
+
 function addPlayer(){
  const nameInput=document.getElementById('playerName');
  const positionInput=document.getElementById('playerPosition');
@@ -793,7 +906,10 @@ function addPlayer(){
  }
 
  const name=nameInput.value.trim();
- const position=positionInput.value;
+ const positions=positionInput.multiple
+   ? [...positionInput.selectedOptions].map(option=>option.value)
+   : [positionInput.value].filter(Boolean);
+ const position=positionStorageValue(positions);
  const shot=shotInput.value;
 
  if(birthdayInput?.value && birthdayToIso(birthdayInput.value)===null){
@@ -808,10 +924,18 @@ function addPlayer(){
    return;
  }
 
+ if(!position){
+   alert('Bitte mindestens eine Position auswählen.');
+   positionInput.focus();
+   return;
+ }
+
  const newPlayer={
    id:'p'+Date.now(),
    name,
-   role:position==='Goalie'?'Goalie':'Feldspieler',
+   role:isGoaliePosition(position)&&!isForwardPosition(position)&&!isDefensePosition(position)
+     ? 'Goalie'
+     : 'Feldspieler',
    position,
    shot,
    jerseyNumber:numberInput?.value.trim()||'',
@@ -854,7 +978,52 @@ function deletePlayer(id){
 
   save();
 }
-function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
+function changePosition(id,position){
+  const p=data.players.find(x=>x.id===id);
+  if(!p)return;
+
+  p.position=position;
+  p.role=isGoaliePosition(position)&&!isForwardPosition(position)&&!isDefensePosition(position)
+    ? 'Goalie'
+    : 'Feldspieler';
+
+  save();
+}
+
+function openCoachPositionEditor(playerId){
+  const player=data.players.find(p=>p.id===playerId);
+  if(!player)return;
+
+  openModal(`
+    <h2>Positionen – ${player.name}</h2>
+    <div class="stack">
+      <p class="muted">
+        Du kannst mehrere Positionen auswählen.
+      </p>
+
+      <div class="field">
+        <label>Positionen</label>
+        ${positionCheckboxesHtml(player.position,'coachPlayerPositions')}
+      </div>
+
+      <button class="btn primary" onclick="saveCoachPlayerPositions('${player.id}')">
+        Speichern
+      </button>
+    </div>
+  `);
+}
+
+function saveCoachPlayerPositions(playerId){
+  const positions=selectedPositionCheckboxes('coachPlayerPositions');
+
+  if(!positions.length){
+    alert('Bitte mindestens eine Position auswählen.');
+    return;
+  }
+
+  changePosition(playerId,positionStorageValue(positions));
+  closeModal();
+}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
 function birthdayToDisplay(value){
@@ -1816,7 +1985,7 @@ function renderSelected(){
  if(!e){selectedTitle.textContent='Termin auswählen';selectedBody.innerHTML='<span class="muted">Wähle links einen Termin aus.</span>';return}
  selectedTitle.textContent=`${labels[e.type].single}: ${fmtDate(e.date)} · ${e.time}`;
  const a=data.attendance[e.id]||{},present=data.players.filter(p=>a[p.id]==='present'),absent=data.players.filter(p=>a[p.id]==='absent'),unknown=data.players.filter(p=>!a[p.id]||a[p.id]==='unknown');
- const forwards=present.filter(p=>p.position==='Stürmer').length,defenders=present.filter(p=>p.position==='Verteidiger').length,goalies=present.filter(p=>p.position==='Goalie').length,left=present.filter(p=>p.shot==='Links').length,right=present.filter(p=>p.shot==='Rechts').length;
+ const forwards=present.filter(p=>isForwardPosition(p)).length,defenders=present.filter(p=>isDefensePosition(p)).length,goalies=present.filter(p=>isGoaliePosition(p)).length,left=present.filter(p=>p.shot==='Links').length,right=present.filter(p=>p.shot==='Rechts').length;
  selectedBody.innerHTML=`${e.title?`<p><strong>${e.title}</strong></p>`:''}
 <div class="counts">
   <div class="count present"><b>${present.length}</b>Dabei</div>
@@ -1871,7 +2040,7 @@ function renderSelected(){
 </details>`;
  renderLineup(e.id);
  renderCoachboard(e.id);
- for(const p of data.players){const s=a[p.id]||'unknown',row=document.createElement('div');row.className='player';row.dataset.search=`${p.name} ${p.position||p.role} ${p.jerseyNumber||''}`;row.innerHTML=`<div><div class="name">${p.name}${absenceReason(e.id,p.id)?`<span class="absence-badge">${absenceReason(e.id,p.id)}</span>`:''}</div><div class="role">${p.position||p.role} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div><div class="status"><button class="${s==='present'?'on-present':''}" onclick="setStatus('${p.id}','present')">✓</button><button class="${s==='absent'?'on-absent':''}" onclick="setStatus('${p.id}','absent')">✕</button><button class="${s==='unknown'?'on-unknown':''}" onclick="setStatus('${p.id}','unknown')">?</button></div>`;attendanceList.appendChild(row)}
+ for(const p of data.players){const s=a[p.id]||'unknown',row=document.createElement('div');row.className='player';row.dataset.search=`${p.name} ${positionLabel(p)} ${p.jerseyNumber||''}`;row.innerHTML=`<div><div class="name">${p.name}${absenceReason(e.id,p.id)?`<span class="absence-badge">${absenceReason(e.id,p.id)}</span>`:''}</div><div class="role">${positionLabel(p)} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div><div class="status"><button class="${s==='present'?'on-present':''}" onclick="setStatus('${p.id}','present')">✓</button><button class="${s==='absent'?'on-absent':''}" onclick="setStatus('${p.id}','absent')">✕</button><button class="${s==='unknown'?'on-unknown':''}" onclick="setStatus('${p.id}','unknown')">?</button></div>`;attendanceList.appendChild(row)}
 }
 
 
@@ -2168,17 +2337,16 @@ function recalculateAttendanceFromAbsences(){
 function absenceReason(eventId,playerId){return (data.attendance[eventId]||{})[playerId+'_reason']||''}
 
 function renderPlayers(){
+ upgradePlayerPositionInput();
  playerAdminList.innerHTML='';
  for(const p of data.players){
    const row=document.createElement('div');
    row.className='player';
-   row.innerHTML=`<div><div class="name">${p.name}</div><div class="role">${p.position||p.role} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div>
+   row.innerHTML=`<div><div class="name">${p.name}</div><div class="role">${positionLabel(p)} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div>
    <div class="row">
-     <select onchange="changePosition('${p.id}',this.value)">
-       <option ${p.position==='Stürmer'?'selected':''}>Stürmer</option>
-       <option ${p.position==='Verteidiger'?'selected':''}>Verteidiger</option>
-       <option ${p.position==='Goalie'?'selected':''}>Goalie</option>
-     </select>
+     <button class="btn soft" onclick="openCoachPositionEditor('${p.id}')">
+       Position: ${positionLabel(p)}
+     </button>
      <select onchange="changeShot('${p.id}',this.value)">
        <option ${p.shot==='Links'?'selected':''}>Links</option>
        <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
@@ -2212,7 +2380,7 @@ function renderStats(){
      if(s==='absent')no++
    }
    const total=yes+no,rate=total?Math.round(yes/total*100):0;
-   html+=`<tr><td>${p.name}</td><td>${p.jerseyNumber||'–'}</td><td>${fmtBirthday(p.birthday)}</td><td>${p.position||p.role}</td><td>${p.shot||'–'}</td><td>${yes}</td><td>${no}</td><td>${rate}%</td></tr>`
+   html+=`<tr><td>${p.name}</td><td>${p.jerseyNumber||'–'}</td><td>${fmtBirthday(p.birthday)}</td><td>${positionLabel(p)}</td><td>${p.shot||'–'}</td><td>${yes}</td><td>${no}</td><td>${rate}%</td></tr>`
  }
  html+='</tbody></table>';
  stats.innerHTML=html
@@ -2497,7 +2665,7 @@ function pdfPlayerRow(p){
     p.jerseyNumber||'–',
     p.name,
     fmtBirthday(p.birthday),
-    p.position||p.role||'–',
+    positionLabel(p),
     p.shot||'–'
   ];
 }
@@ -2883,7 +3051,7 @@ function renderQuickPlanner(){
   html+='</tr></thead><tbody>';
 
   for(const p of data.players){
-    html+=`<tr><td><strong>${p.name}</strong><br><span class="muted">${p.position||p.role}${p.jerseyNumber?' · #'+p.jerseyNumber:''}</span></td>`;
+    html+=`<tr><td><strong>${p.name}</strong><br><span class="muted">${positionLabel(p)}${p.jerseyNumber?' · #'+p.jerseyNumber:''}</span></td>`;
     for(const t of trainings){
       const status=(data.attendance[t.id]||{})[p.id]||'present';
       const cls=status==='absent'?'absent':status==='open'?'open':'present';
@@ -3001,9 +3169,9 @@ function downloadMonthlyTrainingPdf(){
     }
 
     const summaryBody=[
-      ['Stuermer',...monthTrainings.map(t=>presentPlayers(t).filter(p=>p.position==='Stürmer').length)],
-      ['Verteidiger',...monthTrainings.map(t=>presentPlayers(t).filter(p=>p.position==='Verteidiger').length)],
-      ['Goalies',...monthTrainings.map(t=>presentPlayers(t).filter(p=>p.position==='Goalie').length)],
+      ['Stuermer',...monthTrainings.map(t=>presentPlayers(t).filter(p=>isForwardPosition(p)).length)],
+      ['Verteidiger',...monthTrainings.map(t=>presentPlayers(t).filter(p=>isDefensePosition(p)).length)],
+      ['Goalies',...monthTrainings.map(t=>presentPlayers(t).filter(p=>isGoaliePosition(p)).length)],
       ['Total',...monthTrainings.map(t=>presentPlayers(t).length)]
     ];
 
@@ -3056,7 +3224,7 @@ function exportCSV(){
      if(s==='absent')no++
    }
    const total=yes+no;
-   rows.push([p.name,p.jerseyNumber||'',p.birthday||'',p.position||p.role,p.shot||'',yes,no,total?Math.round(yes/total*100):0])
+   rows.push([p.name,p.jerseyNumber||'',p.birthday||'',positionLabel(p),p.shot||'',yes,no,total?Math.round(yes/total*100):0])
  }
  const csv='\ufeff'+rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(';')).join('\n');
  const a=document.createElement('a');
@@ -3989,12 +4157,11 @@ function openMyPlayerData(){
       </div>
 
       <div class="field">
-        <label>Position</label>
-        <select id="myPlayerPosition">
-          <option value="Stürmer" ${player.position==='Stürmer'?'selected':''}>Stürmer</option>
-          <option value="Verteidiger" ${player.position==='Verteidiger'?'selected':''}>Verteidiger</option>
-          <option value="Goalie" ${player.position==='Goalie'?'selected':''}>Goalie</option>
-        </select>
+        <label>Positionen</label>
+        ${positionCheckboxesHtml(player.position,'myPlayerPositions')}
+        <div class="muted" style="margin-top:6px">
+          Mehrfachauswahl möglich, z. B. LW + C oder LD + RD.
+        </div>
       </div>
 
       <div class="field">
@@ -4025,7 +4192,8 @@ function openMyPlayerData(){
 
 async function saveMyPlayerData(){
   const number=document.getElementById('myPlayerNumber')?.value.trim()||'';
-  const position=document.getElementById('myPlayerPosition')?.value||'';
+  const positions=selectedPositionCheckboxes('myPlayerPositions');
+  const position=positionStorageValue(positions);
   const shot=document.getElementById('myPlayerShot')?.value||'';
   const birthdayRaw=document.getElementById('myPlayerBirthday')?.value.trim()||'';
 
@@ -4034,8 +4202,8 @@ async function saveMyPlayerData(){
     return;
   }
 
-  if(!['Stürmer','Verteidiger','Goalie'].includes(position)){
-    alert('Bitte eine gültige Position auswählen.');
+  if(!positions.length){
+    alert('Bitte mindestens eine Position auswählen.');
     return;
   }
 
@@ -4259,7 +4427,7 @@ async function loadPlayerPortal(){
             #${playerProfileData().jerseyNumber||'–'}
           </span>
           <span class="player-role-badge">
-            ${playerProfileData().position||'Position offen'}
+            ${positionLabel(playerProfileData().position)||'Position offen'}
           </span>
           <span class="player-role-badge">
             Schuss ${playerProfileData().shot||'–'}
@@ -5275,9 +5443,9 @@ function availabilityCountsForEvent(event){
   const present=data.players.filter(p=>(attendance[p.id]||'present')==='present');
   return {
     total:present.length,
-    forwards:present.filter(p=>p.position==='Stürmer').length,
-    defenders:present.filter(p=>p.position==='Verteidiger').length,
-    goalies:present.filter(p=>p.position==='Goalie').length
+    forwards:present.filter(p=>isForwardPosition(p)).length,
+    defenders:present.filter(p=>isDefensePosition(p)).length,
+    goalies:present.filter(p=>isGoaliePosition(p)).length
   };
 }
 
