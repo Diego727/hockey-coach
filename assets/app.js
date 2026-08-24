@@ -4210,6 +4210,26 @@ let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
 
 
+
+function formatBirthdayTyping(value){
+  const digits=String(value||'').replace(/\D/g,'').slice(0,8);
+
+  if(digits.length<=2){
+    return digits;
+  }
+
+  if(digits.length<=4){
+    return digits.slice(0,2)+'.'+digits.slice(2);
+  }
+
+  return digits.slice(0,2)+'.'+digits.slice(2,4)+'.'+digits.slice(4);
+}
+
+function handlePlayerBirthdayTyping(input){
+  if(!input)return;
+  input.value=formatBirthdayTyping(input.value);
+}
+
 function playerProfileData(){
   return currentPlayerSchedule?.player_data||{};
 }
@@ -4258,9 +4278,11 @@ function openMyPlayerData(){
           id="myPlayerBirthday"
           type="text"
           inputmode="numeric"
+          autocomplete="bday"
           maxlength="10"
-          placeholder="TT.MM.JJJJ"
-          value="${birthdayToDisplay(player.birthday||'')}">
+          placeholder="__.__.____"
+          value="${birthdayToDisplay(player.birthday||'')}"
+          oninput="handlePlayerBirthdayTyping(this)">
       </div>
 
       <button class="btn primary" onclick="saveMyPlayerData()">
