@@ -1,32 +1,65 @@
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
 
-// Supabase-Einladungs-/Recovery-Link erkennen, bevor der Client die URL verarbeitet.
+// Spieler-Zugangslink erkennen, bevor Supabase die URL verarbeitet.
 const INITIAL_AUTH_HASH=window.location.hash||'';
 const INITIAL_AUTH_SEARCH=window.location.search||'';
 
-const INITIAL_AUTH_TYPE=(()=>{
+const INITIAL_AUTH_INFO=(()=>{
   try{
     const hashParams=new URLSearchParams(INITIAL_AUTH_HASH.replace(/^#/,''));
     const queryParams=new URLSearchParams(INITIAL_AUTH_SEARCH.replace(/^\?/,''));
 
-    return (
-      hashParams.get('type')||
-      queryParams.get('type')||
-      ''
-    ).toLowerCase();
+    return {
+      type:(
+        hashParams.get('type')||
+        queryParams.get('type')||
+        ''
+      ).toLowerCase(),
+      playerSetup:queryParams.get('player_setup')==='1',
+      code:queryParams.get('code')||'',
+      accessToken:hashParams.get('access_token')||'',
+      refreshToken:hashParams.get('refresh_token')||'',
+      error:hashParams.get('error')||queryParams.get('error')||'',
+      errorCode:hashParams.get('error_code')||queryParams.get('error_code')||'',
+      errorDescription:
+        hashParams.get('error_description')||
+        queryParams.get('error_description')||
+        ''
+    };
   }catch(_error){
-    return '';
+    return {
+      type:'',
+      playerSetup:false,
+      code:'',
+      accessToken:'',
+      refreshToken:'',
+      error:'',
+      errorCode:'',
+      errorDescription:''
+    };
   }
 })();
 
+const INITIAL_AUTH_TYPE=INITIAL_AUTH_INFO.type;
+
 let inviteSetupRequested=
+  INITIAL_AUTH_INFO.playerSetup||
   INITIAL_AUTH_TYPE==='invite'||
-  INITIAL_AUTH_TYPE==='recovery';
+  INITIAL_AUTH_TYPE==='recovery'||
+  Boolean(INITIAL_AUTH_INFO.code)||
+  Boolean(INITIAL_AUTH_INFO.accessToken);
 
 const cloudClient=window.supabase.createClient(
   SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY
+  SUPABASE_PUBLISHABLE_KEY,
+  {
+    auth:{
+      persistSession:true,
+      autoRefreshToken:true,
+      detectSessionInUrl:true
+    }
+  }
 );
 const SHARED_CLUB_ID='7c807357-d90b-4ca4-9d20-f61a82ff6065';
 const CALENDAR_FUNCTION_URL=
@@ -5136,7 +5169,9 @@ async function createPlayerAccessWithPassword(playerId){
   }
 
   try{
-    const redirectTo=window.location.origin+window.location.pathname;
+    const setupUrl=new URL(window.location.origin+window.location.pathname);
+    setupUrl.searchParams.set('player_setup','1');
+    const redirectTo=setupUrl.toString();
 
     const {
       data:{session},
@@ -5304,6 +5339,69 @@ async function forceFirstPasswordChange(){
   return false;
 }
 
+
+
+async function resolvePlayerSetupSession(){
+  if(!inviteSetupRequested)return null;
+
+  // Supabase kann je nach Auth-Flow entweder einen PKCE-Code oder
+  // Access-/Refresh-Tokens zurückgeben. Beide Varianten werden explizit behandelt.
+  if(INITIAL_AUTH_INFO.code){
+    const {
+      data,
+      error
+    }=await cloudClient.auth.exchangeCodeForSession(INITIAL_AUTH_INFO.code);
+
+    if(error)throw error;
+    if(data?.session)return data.session;
+  }
+
+  if(INITIAL_AUTH_INFO.accessToken&&INITIAL_AUTH_INFO.refreshToken){
+    const {
+      data,
+      error
+    }=await cloudClient.auth.setSession({
+      access_token:INITIAL_AUTH_INFO.accessToken,
+      refresh_token:INITIAL_AUTH_INFO.refreshToken
+    });
+
+    if(error)throw error;
+    if(data?.session)return data.session;
+  }
+
+  // detectSessionInUrl kann die Session bereits automatisch übernommen haben.
+  const {
+    data:{session},
+    error
+  }=await cloudClient.auth.getSession();
+
+  if(error)throw error;
+  return session||null;
+}
+
+function showPlayerSetupLinkError(message){
+  const authScreen=document.getElementById('authScreen');
+  if(authScreen)authScreen.classList.remove('hidden');
+
+  const text=message||
+    'Der Zugangslink konnte nicht verarbeitet werden. Bitte beim Coach einen neuen Link anfordern.';
+
+  if(typeof showAuthMessage==='function'){
+    showAuthMessage(text,true);
+  }else{
+    alert(text);
+  }
+}
+
+function cleanupPlayerSetupUrl(){
+  try{
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.origin+window.location.pathname
+    );
+  }catch(_error){}
+}
 
 let passwordSetupVisible=false;
 
@@ -5514,13 +5612,7 @@ async function completePasswordSetup(){
 
   inviteSetupRequested=false;
 
-  try{
-    window.history.replaceState(
-      {},
-      document.title,
-      window.location.origin+window.location.pathname
-    );
-  }catch(_error){}
+  cleanupPlayerSetupUrl();
 
   hidePasswordSetup();
 
@@ -5584,19 +5676,64 @@ async function handleCloudSession(session){
   else document.getElementById('teamScreen').classList.remove('hidden');
 }
 async function initCloud(){
-  const {data:{session}}=await cloudClient.auth.getSession();
-  await handleCloudSession(session);
-  cloudClient.auth.onAuthStateChange(async(event,session)=>{
+  let initialSession=null;
+
+  // Auth-Listener zuerst registrieren, damit kein Redirect-Event verloren geht.
+  cloudClient.auth.onAuthStateChange((event,session)=>{
     if(event==='PASSWORD_RECOVERY'){
       inviteSetupRequested=true;
-      await handleCloudSession(session);
-      return;
     }
 
-    if(event==='SIGNED_IN'||event==='INITIAL_SESSION'||event==='TOKEN_REFRESHED'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
-      await handleCloudSession(session);
+    if(
+      event==='PASSWORD_RECOVERY'||
+      event==='SIGNED_IN'||
+      event==='INITIAL_SESSION'||
+      event==='TOKEN_REFRESHED'||
+      event==='SIGNED_OUT'||
+      event==='USER_UPDATED'
+    ){
+      setTimeout(()=>handleCloudSession(session),0);
     }
   });
+
+  if(INITIAL_AUTH_INFO.error){
+    const description=decodeURIComponent(
+      (INITIAL_AUTH_INFO.errorDescription||'').replace(/\+/g,' ')
+    );
+
+    showPlayerSetupLinkError(
+      INITIAL_AUTH_INFO.errorCode==='otp_expired'
+        ? 'Dieser Zugangslink ist abgelaufen oder wurde bereits benutzt. Bitte beim Coach einen neuen Link anfordern.'
+        : ('Zugangslink ungültig'+(description?': '+description:''))
+    );
+    return;
+  }
+
+  if(inviteSetupRequested){
+    try{
+      initialSession=await resolvePlayerSetupSession();
+
+      if(!initialSession){
+        showPlayerSetupLinkError(
+          'Der Spielerzugang konnte nicht gestartet werden. Bitte beim Coach einen neuen Einladungslink anfordern.'
+        );
+        return;
+      }
+    }catch(error){
+      console.error('Spieler-Setup konnte nicht gestartet werden',error);
+      showPlayerSetupLinkError(
+        'Der Spielerzugang konnte nicht gestartet werden. Bitte beim Coach einen neuen Einladungslink anfordern.'
+      );
+      return;
+    }
+  }else{
+    const {
+      data:{session}
+    }=await cloudClient.auth.getSession();
+    initialSession=session;
+  }
+
+  await handleCloudSession(initialSession);
 }
 
 
