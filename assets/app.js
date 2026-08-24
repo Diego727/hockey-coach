@@ -5551,11 +5551,8 @@ async function handleCloudSession(session){
   logoutBtn.style.display='inline-block';
   cloudReady=false;
 
-  if(
-    inviteSetupRequested &&
-    cloudUser &&
-    cloudUser.user_metadata?.password_setup_complete!==true
-  ){
+  if(inviteSetupRequested&&cloudUser){
+    // Invite UND Recovery: immer direkt Passwort-Einrichtung anzeigen.
     showPasswordSetup(session);
     return;
   }
@@ -5596,7 +5593,7 @@ async function initCloud(){
       return;
     }
 
-    if(event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
+    if(event==='SIGNED_IN'||event==='INITIAL_SESSION'||event==='TOKEN_REFRESHED'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
       await handleCloudSession(session);
     }
   });
