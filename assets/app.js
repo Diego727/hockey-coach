@@ -13,6 +13,7 @@ const EMPTY_TEAM_DATA=()=>({
  lineups:{},
  boards:{},
  absences:[],
+ manualAttendanceOverrides:{},
  settings:{logo:'',teamName:'',coachName:''}
 });
 function normalizeTeamData(teamData){
@@ -23,6 +24,7 @@ function normalizeTeamData(teamData){
   normalized.lineups ||= {};
   normalized.boards ||= {};
   normalized.absences ||= [];
+  normalized.manualAttendanceOverrides ||= {};
   normalized.settings ||= {logo:'',teamName:'',coachName:''};
   for(const p of normalized.players){
     if(!('jerseyNumber' in p))p.jerseyNumber='';
@@ -603,7 +605,7 @@ function selectEvent(id){
     }
   });
 }
-function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(selectedId===id)selectedId=null;save()}
+function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(data.manualAttendanceOverrides)delete data.manualAttendanceOverrides[id];if(selectedId===id)selectedId=null;save()}
 
 function editEvent(id){
   const e=data.events.find(x=>x.id===id);
@@ -657,11 +659,43 @@ function saveEventEdit(id){
   save();
 }
 
+
+function ensureManualAttendanceOverrides(){
+  data.manualAttendanceOverrides ||= {};
+}
+
+function markManualAttendanceOverride(eventId,playerId,status){
+  ensureManualAttendanceOverrides();
+  data.manualAttendanceOverrides[eventId] ||= {};
+  data.manualAttendanceOverrides[eventId][playerId]=status;
+}
+
+function clearManualAttendanceOverride(eventId,playerId){
+  ensureManualAttendanceOverrides();
+  if(!data.manualAttendanceOverrides[eventId])return;
+  delete data.manualAttendanceOverrides[eventId][playerId];
+  if(!Object.keys(data.manualAttendanceOverrides[eventId]).length){
+    delete data.manualAttendanceOverrides[eventId];
+  }
+}
+
+function manualAttendanceOverride(eventId,playerId){
+  ensureManualAttendanceOverrides();
+  return data.manualAttendanceOverrides[eventId]?.[playerId] ?? null;
+}
+
+function hasManualAttendanceOverride(eventId,playerId){
+  return manualAttendanceOverride(eventId,playerId)!==null;
+}
+
 function setStatus(pid,status){
   if(!selectedId)return;
 
   data.attendance[selectedId]||={};
   data.attendance[selectedId][pid]=status;
+
+  // Direkte manuelle Eingabe im Training hat immer höchste Priorität.
+  markManualAttendanceOverride(selectedId,pid,status);
 
   rememberCoachAttendanceEdit(
     activeTeamKey,
@@ -689,6 +723,9 @@ function setAllAttendance(eventId,status){
 
   for(const p of data.players){
     data.attendance[eventId][p.id]=status;
+
+    // Auch Sammeländerungen des Coaches gelten als manuelle Vorgabe.
+    markManualAttendanceOverride(eventId,p.id,status);
 
     rememberCoachAttendanceEdit(
       activeTeamKey,
@@ -773,7 +810,23 @@ function addPlayer(){
  save();
  alert(`${newPlayer.name} wurde hinzugefügt.`);
 }
-function deletePlayer(id){if(!confirm('Spieler wirklich löschen?'))return;data.players=data.players.filter(p=>p.id!==id);for(const a of Object.values(data.attendance))delete a[id];save()}
+function deletePlayer(id){
+  if(!confirm('Spieler wirklich löschen?'))return;
+
+  data.players=data.players.filter(p=>p.id!==id);
+
+  for(const attendance of Object.values(data.attendance)){
+    delete attendance[id];
+    delete attendance[id+'_reason'];
+  }
+
+  ensureManualAttendanceOverrides();
+  for(const overrides of Object.values(data.manualAttendanceOverrides)){
+    delete overrides[id];
+  }
+
+  save();
+}
 function changePosition(id,position){const p=data.players.find(x=>x.id===id);if(p){p.position=position;p.role=position==='Goalie'?'Goalie':'Feldspieler';save()}}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
@@ -1951,6 +2004,9 @@ function deleteEventSeries(eventId){
     delete data.attendance[id];
     delete data.lineups[id];
     delete data.boards[id];
+    if(data.manualAttendanceOverrides){
+      delete data.manualAttendanceOverrides[id];
+    }
   }
 
   if(ids.has(selectedId)){
@@ -1994,15 +2050,93 @@ function deleteAbsence(id){
 function absenceForEvent(playerId,date){return (data.absences||[]).find(a=>a.playerId===playerId&&date>=a.start&&date<=a.end)||null}
 function applyAbsencesToEvent(event){
   data.attendance[event.id] ||= {};
+  ensureManualAttendanceOverrides();
+
   for(const p of data.players){
+    const manualStatus=manualAttendanceOverride(event.id,p.id);
+
+    // Höchste Priorität: explizite Eingabe für genau diesen Termin.
+    if(manualStatus!==null){
+      data.attendance[event.id][p.id]=manualStatus;
+
+      // Der automatische Abwesenheitsgrund darf bei manueller Teilnahme
+      // nicht weiter angezeigt werden.
+      const reasonKey=p.id+'_reason';
+      if(reasonKey in data.attendance[event.id]){
+        delete data.attendance[event.id][reasonKey];
+      }
+
+      if(manualStatus!=='present'&&data.lineups?.[event.id]){
+        clearPlayerFromLineup(event.id,p.id);
+      }
+      continue;
+    }
+
+    // Zweite Priorität: hinterlegte Abwesenheitsperiode.
     const a=absenceForEvent(p.id,event.date);
-    if(a){data.attendance[event.id][p.id]='absent';data.attendance[event.id][p.id+'_reason']=a.reason;if(data.lineups?.[event.id])clearPlayerFromLineup(event.id,p.id)}
-    else if(!(p.id in data.attendance[event.id]))data.attendance[event.id][p.id]='present';
+
+    if(a){
+      data.attendance[event.id][p.id]='absent';
+      data.attendance[event.id][p.id+'_reason']=a.reason;
+
+      if(data.lineups?.[event.id]){
+        clearPlayerFromLineup(event.id,p.id);
+      }
+    }else{
+      const reasonKey=p.id+'_reason';
+
+      if(reasonKey in data.attendance[event.id]){
+        delete data.attendance[event.id][reasonKey];
+      }
+
+      if(!(p.id in data.attendance[event.id])){
+        data.attendance[event.id][p.id]='present';
+      }
+    }
   }
 }
 function applyAllAbsences(){for(const e of data.events)applyAbsencesToEvent(e)}
 function recalculateAttendanceFromAbsences(){
-  for(const e of data.events){data.attendance[e.id] ||= {};for(const p of data.players){const a=absenceForEvent(p.id,e.date),rk=p.id+'_reason';if(a){data.attendance[e.id][p.id]='absent';data.attendance[e.id][rk]=a.reason}else if(rk in data.attendance[e.id]){delete data.attendance[e.id][rk];data.attendance[e.id][p.id]='present'}}}
+  ensureManualAttendanceOverrides();
+
+  for(const e of data.events){
+    data.attendance[e.id] ||= {};
+
+    for(const p of data.players){
+      const manualStatus=manualAttendanceOverride(e.id,p.id);
+      const reasonKey=p.id+'_reason';
+
+      if(manualStatus!==null){
+        data.attendance[e.id][p.id]=manualStatus;
+
+        if(reasonKey in data.attendance[e.id]){
+          delete data.attendance[e.id][reasonKey];
+        }
+
+        if(manualStatus!=='present'&&data.lineups?.[e.id]){
+          clearPlayerFromLineup(e.id,p.id);
+        }
+        continue;
+      }
+
+      const a=absenceForEvent(p.id,e.date);
+
+      if(a){
+        data.attendance[e.id][p.id]='absent';
+        data.attendance[e.id][reasonKey]=a.reason;
+
+        if(data.lineups?.[e.id]){
+          clearPlayerFromLineup(e.id,p.id);
+        }
+      }else{
+        if(reasonKey in data.attendance[e.id]){
+          delete data.attendance[e.id][reasonKey];
+        }
+
+        data.attendance[e.id][p.id]='present';
+      }
+    }
+  }
 }
 function absenceReason(eventId,playerId){return (data.attendance[eventId]||{})[playerId+'_reason']||''}
 
@@ -2669,11 +2803,26 @@ function setQuickMonth(month){quickMonth=month;renderQuickPlanner()}
 function toggleQuickAttendance(eventId,playerId){
   data.attendance[eventId] ||= {};
   const current=data.attendance[eventId][playerId]||'present';
-  data.attendance[eventId][playerId]=current==='absent'?'present':'absent';
-  if(data.attendance[eventId][playerId]!=='present'&&data.lineups?.[eventId]){
+  const nextStatus=current==='absent'?'present':'absent';
+
+  data.attendance[eventId][playerId]=nextStatus;
+
+  // Änderung in der Schnellplanung ist ebenfalls eine manuelle Coach-Vorgabe.
+  markManualAttendanceOverride(eventId,playerId,nextStatus);
+
+  rememberCoachAttendanceEdit(
+    activeTeamKey,
+    eventId,
+    playerId,
+    nextStatus
+  );
+
+  if(nextStatus!=='present'&&data.lineups?.[eventId]){
     clearPlayerFromLineup(eventId,playerId);
   }
+
   save();
+  persistCoachPlayerStatus(eventId,playerId,nextStatus);
 }
 function renderQuickPlanner(){
   const el=document.getElementById('quickPlanner');
@@ -4539,6 +4688,12 @@ async function syncPlayerStatusesIntoCoachView(){
       team.attendance[row.event_id][profile.player_ref]=row.status;
       changed=true;
     }
+
+    // Ein explizit im Spielerportal gesetzter Terminstatus ist ebenfalls
+    // konkreter als eine allgemeine Abwesenheitsperiode.
+    team.manualAttendanceOverrides ||= {};
+    team.manualAttendanceOverrides[row.event_id] ||= {};
+    team.manualAttendanceOverrides[row.event_id][profile.player_ref]=row.status;
 
     // Sobald DB und Coach denselben Stand haben, Schutz entfernen.
     if(protectedEdit&&protectedEdit.status===row.status){
