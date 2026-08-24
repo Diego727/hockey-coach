@@ -1,6 +1,34 @@
 const SUPABASE_URL='https://amhdxwbbnbvwpyrxxjho.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_D7qzc4BKtWMynq8RqwzAqw_l8FVvXlT';
-const cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+
+// Wichtig: Marker des Supabase-Einladungs-/Recovery-Links erfassen,
+// bevor der Supabase-Client die URL verarbeitet.
+const INITIAL_AUTH_URL=window.location.href;
+const INITIAL_AUTH_HASH=window.location.hash||'';
+const INITIAL_AUTH_SEARCH=window.location.search||'';
+
+const INITIAL_AUTH_TYPE=(()=>{
+  try{
+    const hashParams=new URLSearchParams(INITIAL_AUTH_HASH.replace(/^#/,''));
+    const queryParams=new URLSearchParams(INITIAL_AUTH_SEARCH.replace(/^\?/,''));
+    return (
+      hashParams.get('type')||
+      queryParams.get('type')||
+      ''
+    ).toLowerCase();
+  }catch(_error){
+    return '';
+  }
+})();
+
+let inviteSetupRequested=
+  INITIAL_AUTH_TYPE==='invite'||
+  INITIAL_AUTH_TYPE==='recovery';
+
+const cloudClient=window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
 const SHARED_CLUB_ID='7c807357-d90b-4ca4-9d20-f61a82ff6065';
 const CALENDAR_FUNCTION_URL=
   `${SUPABASE_URL}/functions/v1/team-calendar`;
@@ -4495,6 +4523,241 @@ async function forceFirstPasswordChange(){
   return false;
 }
 
+
+let passwordSetupVisible=false;
+
+function hidePasswordSetup(){
+  passwordSetupVisible=false;
+  document.getElementById('passwordSetupScreen')?.remove();
+}
+
+function showPasswordSetup(session){
+  if(!session?.user)return false;
+
+  passwordSetupVisible=true;
+
+  const authScreen=document.getElementById('authScreen');
+  const coach=document.getElementById('coachModeApp');
+  const player=document.getElementById('playerPilotApp');
+  const teamScreen=document.getElementById('teamScreen');
+
+  authScreen?.classList.add('hidden');
+  coach?.classList.add('hidden');
+  player?.classList.add('hidden');
+  teamScreen?.classList.add('hidden');
+
+  document.getElementById('teamSwitchBtn').style.display='none';
+  document.getElementById('settingsBtn').style.display='none';
+
+  let screen=document.getElementById('passwordSetupScreen');
+
+  if(!screen){
+    screen=document.createElement('div');
+    screen.id='passwordSetupScreen';
+    screen.style.cssText=`
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      background:
+        radial-gradient(circle at 10% 0%,rgba(36,87,68,.18),transparent 30%),
+        linear-gradient(180deg,#eef5f2,#f9fbfa);
+    `;
+    document.body.appendChild(screen);
+  }
+
+  const email=session.user.email||'';
+
+  screen.innerHTML=`
+    <div style="
+      width:min(100%,460px);
+      background:#fff;
+      border:1px solid #d8e3de;
+      border-radius:22px;
+      box-shadow:0 20px 55px rgba(23,63,50,.16);
+      padding:24px;
+    ">
+      <div style="
+        width:54px;
+        height:54px;
+        border-radius:16px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        background:#173f32;
+        color:#fff;
+        font-size:26px;
+        margin-bottom:14px;
+      ">🏒</div>
+
+      <h2 style="margin:0 0 6px;color:#173f32">
+        Zugang einrichten
+      </h2>
+
+      <p style="margin:0 0 18px;color:#6e7974;line-height:1.5">
+        Lege jetzt dein persönliches Passwort für die SC-Altstadt-Hockey-App fest.
+      </p>
+
+      ${email?`
+        <div style="
+          padding:10px 12px;
+          border-radius:11px;
+          background:#f3f7f5;
+          color:#405149;
+          margin-bottom:14px;
+          font-size:14px;
+        ">
+          <strong>E-Mail:</strong> ${email}
+        </div>
+      `:''}
+
+      <div style="display:grid;gap:12px">
+        <label style="display:grid;gap:6px">
+          <span style="font-weight:800;color:#31413a">Neues Passwort</span>
+          <input
+            id="setupPassword1"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="Mindestens 8 Zeichen"
+            style="
+              width:100%;
+              box-sizing:border-box;
+              min-height:46px;
+              border:1px solid #cfded7;
+              border-radius:11px;
+              padding:10px 12px;
+              font-size:16px;
+            ">
+        </label>
+
+        <label style="display:grid;gap:6px">
+          <span style="font-weight:800;color:#31413a">Passwort wiederholen</span>
+          <input
+            id="setupPassword2"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="Passwort nochmals eingeben"
+            style="
+              width:100%;
+              box-sizing:border-box;
+              min-height:46px;
+              border:1px solid #cfded7;
+              border-radius:11px;
+              padding:10px 12px;
+              font-size:16px;
+            ">
+        </label>
+
+        <div id="setupPasswordMessage" style="
+          display:none;
+          padding:10px 12px;
+          border-radius:10px;
+          font-size:14px;
+        "></div>
+
+        <button
+          onclick="completePasswordSetup()"
+          style="
+            border:0;
+            border-radius:12px;
+            min-height:48px;
+            padding:11px 14px;
+            background:linear-gradient(135deg,#245744,#173f32);
+            color:#fff;
+            font-weight:900;
+            font-size:15px;
+            cursor:pointer;
+          ">
+          Zugang aktivieren
+        </button>
+      </div>
+    </div>
+  `;
+
+  requestAnimationFrame(()=>{
+    document.getElementById('setupPassword1')?.focus();
+  });
+
+  return true;
+}
+
+function showSetupPasswordMessage(text,isError=false){
+  const box=document.getElementById('setupPasswordMessage');
+  if(!box)return;
+
+  box.style.display='block';
+  box.style.background=isError?'#fdeaea':'#e8f7ee';
+  box.style.color=isError?'#9a2727':'#17623a';
+  box.textContent=text;
+}
+
+async function completePasswordSetup(){
+  const first=document.getElementById('setupPassword1')?.value||'';
+  const second=document.getElementById('setupPassword2')?.value||'';
+
+  if(first.length<8){
+    showSetupPasswordMessage(
+      'Bitte ein Passwort mit mindestens 8 Zeichen eingeben.',
+      true
+    );
+    return;
+  }
+
+  if(first!==second){
+    showSetupPasswordMessage(
+      'Die beiden Passwörter stimmen nicht überein.',
+      true
+    );
+    return;
+  }
+
+  showSetupPasswordMessage('Passwort wird gespeichert …');
+
+  const {data:updated,error}=await cloudClient.auth.updateUser({
+    password:first,
+    data:{
+      password_setup_complete:true
+    }
+  });
+
+  if(error){
+    showSetupPasswordMessage(
+      'Passwort konnte nicht gespeichert werden: '+error.message,
+      true
+    );
+    return;
+  }
+
+  inviteSetupRequested=false;
+  passwordSetupVisible=false;
+
+  // Token aus der URL entfernen, damit die Einrichtungsseite beim nächsten
+  // Öffnen nicht nochmals erscheint.
+  try{
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.origin+window.location.pathname
+    );
+  }catch(_error){}
+
+  hidePasswordSetup();
+
+  showSetupPasswordMessage('Zugang wurde aktiviert.');
+
+  // Die Session ist bereits aktiv. Jetzt normalen App-Ablauf starten.
+  const {
+    data:{session}
+  }=await cloudClient.auth.getSession();
+
+  await handleCloudSession(session);
+}
+
 async function handleCloudSession(session){
   cloudUser=session?.user||null;
   const authScreen=document.getElementById('authScreen');
@@ -4514,6 +4777,19 @@ async function handleCloudSession(session){
   authScreen.classList.add('hidden');
   logoutBtn.style.display='inline-block';
   cloudReady=false;
+
+  // Einladungs-/Recovery-Link: zuerst persönliches Passwort festlegen.
+  // Danach erst ins Spielerportal wechseln.
+  if(
+    inviteSetupRequested &&
+    cloudUser &&
+    cloudUser.user_metadata?.password_setup_complete!==true
+  ){
+    showPasswordSetup(session);
+    return;
+  }
+
+  hidePasswordSetup();
 
   currentPlayerProfile=await getCurrentPlayerProfile();
 
@@ -4543,6 +4819,12 @@ async function initCloud(){
   const {data:{session}}=await cloudClient.auth.getSession();
   await handleCloudSession(session);
   cloudClient.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='PASSWORD_RECOVERY'){
+      inviteSetupRequested=true;
+      await handleCloudSession(session);
+      return;
+    }
+
     if(event==='SIGNED_IN'||event==='SIGNED_OUT'||event==='USER_UPDATED'){
       await handleCloudSession(session);
     }
