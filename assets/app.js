@@ -1910,7 +1910,7 @@ function renderPlayers(){
      <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
      <input type="date" value="${p.birthday||''}" onchange="changeBirthday('${p.id}',this.value)">
      <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Zugang erstellen</button>
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Einladungslink erstellen</button>
      <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
    </div>`;
    playerAdminList.appendChild(row)
@@ -4347,60 +4347,139 @@ async function readEdgeFunctionError(error,result){
   return error?.message||'Unbekannter Fehler';
 }
 
+
 async function createPlayerAccessWithPassword(playerId){
   const player=data.players.find(p=>p.id===playerId);
   if(!player)return;
 
   const email=(player.email||'').trim().toLowerCase();
+
   if(!email){
     alert('Bitte zuerst eine Spieler-E-Mail hinterlegen.');
     return;
   }
 
-  const startPassword=prompt(
-    `Startpasswort für ${player.name} (mindestens 8 Zeichen):`
-  );
-  if(!startPassword)return;
-
-  if(startPassword.length<8){
-    alert('Das Startpasswort muss mindestens 8 Zeichen lang sein.');
-    return;
-  }
-
   try{
+    const redirectTo=window.location.origin+window.location.pathname;
+
     const {data:result,error}=await cloudClient.functions.invoke(
       'manage-player-user',
       {
-        headers:{
-          apikey:SUPABASE_PUBLISHABLE_KEY
-        },
         body:{
-          action:'create',
+          action:'create_link',
           clubId:SHARED_CLUB_ID,
           teamKey:activeTeamKey,
           playerRef:player.id,
           displayName:player.name,
           email,
-          startPassword
+          redirectTo
         }
       }
     );
 
     if(error||!result?.ok){
       const message=await readEdgeFunctionError(error,result);
-      alert('Zugang konnte nicht erstellt werden:\n\n'+message);
+      alert('Einladungslink konnte nicht erstellt werden:\n\n'+message);
       return;
     }
 
-    alert(
-      `Zugang erstellt.\n\nE-Mail: ${email}\nStartpasswort: ${startPassword}`
-    );
+    const inviteLink=result.inviteLink||'';
+
+    if(!inviteLink){
+      alert('Der Zugang wurde vorbereitet, aber es wurde kein Einladungslink zurückgegeben.');
+      return;
+    }
+
+    openPlayerInviteLinkModal(player,inviteLink,result.alreadyExists);
   }catch(error){
     alert(
-      'Zugang konnte nicht erstellt werden:\n\n'+
+      'Einladungslink konnte nicht erstellt werden:\n\n'+
       (error instanceof Error?error.message:String(error))
     );
   }
+}
+
+function openPlayerInviteLinkModal(player,inviteLink,alreadyExists=false){
+  openModal(`
+    <h2>Spielerzugang – ${player.name}</h2>
+
+    <div class="stack">
+      <div style="
+        padding:12px;
+        border-radius:12px;
+        background:#e8f7ee;
+        color:#145b36;
+        border:1px solid #a9d8ba;
+      ">
+        <strong>${alreadyExists?'Zugang gefunden':'Zugang vorbereitet'}</strong>
+        <div style="margin-top:4px">
+          Diesen persönlichen Link kannst du direkt per WhatsApp, SMS oder Mannschaftschat senden.
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Persönlicher Einladungslink</label>
+        <textarea
+          id="playerInviteLink"
+          readonly
+          style="min-height:115px"
+          onclick="this.select()">${inviteLink}</textarea>
+      </div>
+
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn primary" onclick="copyPlayerInviteLink()">
+          🔗 Link kopieren
+        </button>
+
+        <button class="btn soft" onclick="sharePlayerInviteLink('${player.name.replace(/'/g,"\\'")}')">
+          📲 Teilen
+        </button>
+
+        <button class="btn ghost" onclick="closeModal()">
+          Schliessen
+        </button>
+      </div>
+
+      <div class="muted">
+        Der Spieler öffnet den Link und legt danach sein eigenes Passwort fest.
+      </div>
+    </div>
+  `);
+}
+
+async function copyPlayerInviteLink(){
+  const link=document.getElementById('playerInviteLink')?.value||'';
+  if(!link)return;
+
+  try{
+    await navigator.clipboard.writeText(link);
+    alert('Einladungslink wurde kopiert.');
+  }catch(_error){
+    const field=document.getElementById('playerInviteLink');
+    field?.focus();
+    field?.select();
+    alert('Link ist markiert. Bitte kopieren.');
+  }
+}
+
+async function sharePlayerInviteLink(playerName){
+  const link=document.getElementById('playerInviteLink')?.value||'';
+  if(!link)return;
+
+  if(navigator.share){
+    try{
+      await navigator.share({
+        title:`SC Altstadt – Spielerzugang ${playerName}`,
+        text:`Hier ist dein persönlicher Zugang zur SC-Altstadt-Hockey-App:`,
+        url:link
+      });
+      return;
+    }catch(error){
+      if(error?.name==='AbortError')return;
+    }
+  }
+
+  await copyPlayerInviteLink();
 }
 
 async function forceFirstPasswordChange(){
