@@ -47,6 +47,8 @@ function normalizeTeamData(teamData){
   const normalized=teamData||EMPTY_TEAM_DATA();
   normalized.players ||= [];
   normalized.events ||= [];
+  // Historische Trainings/Spiele bleiben vollständig erhalten.
+  // Keine automatische Bereinigung alter Termine.
   normalized.attendance ||= {};
   normalized.lineups ||= {};
   normalized.boards ||= {};
@@ -1786,6 +1788,15 @@ function renderCoachCalendar(){
     month:'long',
     year:'numeric'
   }).format(firstDay);
+
+  const monthSelect=document.getElementById('playerPortalMonthSelect');
+  if(monthSelect){
+    monthSelect.innerHTML=playerPortalMonths(playerPortalType).map(monthValue=>`
+      <option value="${monthValue}" ${monthValue===playerPortalMonth?'selected':''}>
+        ${monthLabel(monthValue)}
+      </option>
+    `).join('');
+  }
 
   const eventMap={};
   for(const event of events){
@@ -3996,26 +4007,91 @@ function ensurePlayerPortalTheme(){
 
 
     @media(max-width:720px){
+      html,body{
+        overflow-x:hidden !important;
+        max-width:100vw !important;
+      }
+
       #playerPilotApp.player-portal{
-        padding:12px;
+        padding:10px !important;
+        width:100% !important;
+        max-width:100vw !important;
+        box-sizing:border-box !important;
+        overflow-x:hidden !important;
       }
 
       #playerPilotApp .player-portal-card{
-        border-radius:19px;
-        padding:16px;
+        width:100% !important;
+        max-width:100% !important;
+        box-sizing:border-box !important;
+        overflow:hidden !important;
+      }
+
+      #playerPilotApp .player-portal-head{
+        display:grid !important;
+        grid-template-columns:1fr !important;
+        gap:12px !important;
+      }
+
+      #playerPilotApp .player-portal-head > *{
+        min-width:0 !important;
+        max-width:100% !important;
+      }
+
+      #playerPilotApp .player-portal-head .row{
+        width:100% !important;
+        display:grid !important;
+        grid-template-columns:1fr !important;
+        gap:8px !important;
+      }
+
+      #playerPilotApp .btn{
+        width:100% !important;
+        max-width:100% !important;
+        white-space:normal !important;
+        line-height:1.25 !important;
+        box-sizing:border-box !important;
+      }
+
+      #playerPilotApp input,
+      #playerPilotApp select,
+      #playerPilotApp textarea{
+        width:100% !important;
+        max-width:100% !important;
+        box-sizing:border-box !important;
+        font-size:16px !important;
+      }
+
+      #playerPilotApp .player-role-badge{
+        white-space:normal !important;
+        overflow-wrap:anywhere !important;
+      }
+
+      #playerPilotApp #playerPortalCalendar{
+        overflow-x:auto !important;
+        -webkit-overflow-scrolling:touch;
+        width:100% !important;
+        max-width:100% !important;
+        box-sizing:border-box !important;
+        padding:8px !important;
+      }
+
+      #playerPilotApp #playerPortalCalendar > div{
+        min-width:680px;
+      }
+
+      #playerPilotApp img[alt="Teamlogo"]{
+        width:92px !important;
+        height:92px !important;
+      }
+
+      #playerPilotApp .player-portal-card{
+        border-radius:18px !important;
+        padding:14px !important;
       }
 
       #playerPilotApp .player-portal-head{
         align-items:flex-start;
-      }
-
-      #playerPilotApp img[alt="Teamlogo"]{
-        width:104px !important;
-        height:104px !important;
-      }
-
-      #playerPilotApp #playerPortalCalendar{
-        overflow-x:auto;
       }
     }
   `;
@@ -4240,6 +4316,32 @@ async function saveMyPlayerData(){
   alert('Deine Spielerdaten wurden gespeichert.');
 }
 
+
+function playerPortalMonths(type=playerPortalType){
+  return [...new Set(
+    (currentPlayerSchedule?.events||[])
+      .filter(event=>event.type===type&&event.date)
+      .map(event=>event.date.slice(0,7))
+  )].sort();
+}
+
+function ensurePlayerPortalMonth(){
+  const months=playerPortalMonths(playerPortalType);
+  if(!months.length)return;
+
+  if(months.includes(playerPortalMonth))return;
+
+  const todayMonth=new Date().toISOString().slice(0,7);
+
+  if(months.includes(todayMonth)){
+    playerPortalMonth=todayMonth;
+    return;
+  }
+
+  const future=months.find(month=>month>=todayMonth);
+  playerPortalMonth=future||months[months.length-1];
+}
+
 async function loadPlayerPortal(){
   ensurePlayerPortalTheme();
   const app=document.getElementById('playerPilotApp');
@@ -4265,6 +4367,10 @@ async function loadPlayerPortal(){
   }
 
   currentPlayerSchedule=payload;
+
+  // Vergangene Trainings bleiben vollständig erhalten.
+  // Nur die Startansicht wird auf einen sinnvollen Monat gesetzt.
+  ensurePlayerPortalMonth();
 
   const profile=payload?.profile||currentPlayerProfile;
   const events=(payload?.events||[]).sort((a,b)=>
@@ -4497,15 +4603,33 @@ async function loadPlayerPortal(){
       </div>
 
       <div style="
-        display:flex;
-        justify-content:space-between;
+        display:grid;
+        grid-template-columns:auto 1fr auto;
         align-items:center;
         gap:8px;
-        margin-bottom:12px;
+        margin-bottom:10px;
       ">
         <button class="btn soft" onclick="changePlayerPortalMonth(-1)">‹</button>
         <h2 id="playerPortalMonthTitle" style="margin:0;text-align:center"></h2>
         <button class="btn soft" onclick="changePlayerPortalMonth(1)">›</button>
+      </div>
+
+      <div style="
+        display:grid;
+        grid-template-columns:1fr;
+        gap:8px;
+        margin-bottom:12px;
+      ">
+        <select id="playerPortalMonthSelect" onchange="setPlayerPortalMonth(this.value)">
+          ${playerPortalMonths(playerPortalType).map(month=>`
+            <option value="${month}" ${month===playerPortalMonth?'selected':''}>
+              ${monthLabel(month)}
+            </option>
+          `).join('')}
+        </select>
+        <div class="muted" style="font-size:12px">
+          Auch vergangene Trainings bleiben sichtbar und werden weiterhin für die Statistik gespeichert.
+        </div>
       </div>
 
       <div style="
@@ -4535,6 +4659,8 @@ async function loadPlayerPortal(){
 
 function setPlayerPortalType(type){
   playerPortalType=type;
+  ensurePlayerPortalMonth();
+
   document.getElementById('playerPortalTrainingBtn').className=
     'btn '+(type==='training'?'primary':'soft');
   document.getElementById('playerPortalGameBtn').className=
@@ -4559,6 +4685,13 @@ function changePlayerPortalMonth(offset){
   ].join('-');
   renderPlayerPortalCalendar();
 }
+
+function setPlayerPortalMonth(month){
+  if(!month)return;
+  playerPortalMonth=month;
+  renderPlayerPortalCalendar();
+}
+
 
 function playerPortalStatus(eventId){
   return currentPlayerSchedule?.statuses?.[eventId]||'present';
@@ -5639,6 +5772,33 @@ function ensureMobileCoachTheme(){
       #coachModeApp .player > .row > *{
         width:100% !important;
         min-width:0 !important;
+      }
+
+      #coachModeApp .event{
+        position:relative !important;
+        padding-right:12px !important;
+        overflow:visible !important;
+      }
+
+      #coachModeApp .event > div[style*="float:right"]{
+        float:none !important;
+        margin-top:10px !important;
+        display:grid !important;
+        grid-template-columns:1fr 1fr !important;
+        width:100% !important;
+      }
+
+      #coachModeApp .event > div[style*="float:right"] .btn{
+        width:100% !important;
+      }
+
+      #coachModeApp .section-head,
+      #coachModeApp .quick-toolbar{
+        width:100% !important;
+      }
+
+      #coachModeApp .quick-table-wrap{
+        max-width:100% !important;
       }
 
       #coachModeApp .status{
