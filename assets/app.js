@@ -94,6 +94,7 @@ function normalizeTeamData(teamData){
     if(!('jerseyNumber' in p))p.jerseyNumber='';
     if(!('birthday' in p))p.birthday='';
     if(!('email' in p))p.email='';
+    if(!('category' in p))p.category='';
   }
   for(const e of normalized.events){
     if(e.type==='training'){
@@ -817,6 +818,53 @@ function setAllAttendance(eventId,status){
 }
 
 
+
+const PLAYER_CATEGORIES=['U-21','2. Liga','3. Liga','Gäste'];
+
+function playerCategory(player){
+  return PLAYER_CATEGORIES.includes(player?.category)
+    ? player.category
+    : '';
+}
+
+function playerCategoryLabel(player){
+  return playerCategory(player)||'Nicht zugewiesen';
+}
+
+function playerCategorySortValue(player){
+  const category=playerCategory(player);
+  const index=PLAYER_CATEGORIES.indexOf(category);
+  return index===-1 ? PLAYER_CATEGORIES.length : index;
+}
+
+function sortPlayersByCategory(players){
+  return [...(players||[])].sort((a,b)=>{
+    const categoryDiff=
+      playerCategorySortValue(a)-playerCategorySortValue(b);
+
+    if(categoryDiff!==0)return categoryDiff;
+
+    return String(a.name||'').localeCompare(
+      String(b.name||''),
+      'de',
+      {sensitivity:'base'}
+    );
+  });
+}
+
+function changePlayerCategory(playerId,category){
+  const player=data.players.find(p=>p.id===playerId);
+  if(!player)return;
+
+  if(category && !PLAYER_CATEGORIES.includes(category)){
+    alert('Ungültige Spielerkategorie.');
+    return;
+  }
+
+  player.category=category||'';
+  save();
+}
+
 const HOCKEY_POSITIONS=['LW','C','RW','LD','RD','Goalie'];
 
 function playerPositions(playerOrValue){
@@ -979,7 +1027,8 @@ function addPlayer(){
    birthday:birthdayInput
      ? (birthdayToIso(birthdayInput.value)===null?'':birthdayToIso(birthdayInput.value))
      : '',
-   email:emailInput?.value.trim()||''
+   email:emailInput?.value.trim()||'',
+   category:''
  };
 
  data.players.push(newPlayer);
@@ -2385,19 +2434,68 @@ function absenceReason(eventId,playerId){return (data.attendance[eventId]||{})[p
 function renderPlayers(){
  upgradePlayerPositionInput();
  playerAdminList.innerHTML='';
- for(const p of data.players){
+
+ let lastCategory='';
+
+ for(const p of sortPlayersByCategory(data.players)){
+   const categoryLabel=playerCategoryLabel(p);
+
+   if(categoryLabel!==lastCategory){
+     const heading=document.createElement('div');
+     heading.className='player-category-heading';
+     heading.style.cssText=`
+       margin:18px 0 8px;
+       padding:9px 12px;
+       border-radius:10px;
+       background:#e5f0eb;
+       color:#173f32;
+       font-weight:900;
+       font-size:14px;
+       border:1px solid #cfe0d8;
+     `;
+     heading.textContent=categoryLabel;
+     playerAdminList.appendChild(heading);
+     lastCategory=categoryLabel;
+   }
+
    const row=document.createElement('div');
    row.className='player';
-   row.innerHTML=`<div><div class="name">${p.name}</div><div class="role">${positionLabel(p)} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}</div></div>
+   row.innerHTML=`<div>
+     <div class="name">${p.name}</div>
+     <div class="role">
+       ${positionLabel(p)} · ${categoryLabel} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}
+     </div>
+   </div>
    <div class="row">
+     <select
+       title="Kategorie"
+       onchange="changePlayerCategory('${p.id}',this.value)">
+       <option value="" ${!playerCategory(p)?'selected':''}>Kategorie wählen</option>
+       ${PLAYER_CATEGORIES.map(category=>`
+         <option value="${category}" ${playerCategory(p)===category?'selected':''}>
+           ${category}
+         </option>
+       `).join('')}
+     </select>
+
      <button class="btn soft" onclick="openCoachPositionEditor('${p.id}')">
        Position: ${positionLabel(p)}
      </button>
+
      <select onchange="changeShot('${p.id}',this.value)">
        <option ${p.shot==='Links'?'selected':''}>Links</option>
        <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
      </select>
-     <input style="width:80px" type="number" min="0" max="99" value="${p.jerseyNumber||''}" placeholder="Nr." onchange="changeNumber('${p.id}',this.value)">
+
+     <input
+       style="width:80px"
+       type="number"
+       min="0"
+       max="99"
+       value="${p.jerseyNumber||''}"
+       placeholder="Nr."
+       onchange="changeNumber('${p.id}',this.value)">
+
      <input
        type="text"
        inputmode="numeric"
@@ -2409,16 +2507,32 @@ function renderPlayers(){
        onchange="changeBirthday('${p.id}',this.value,this)"
        onblur="changeBirthday('${p.id}',this.value,this)"
      >
-     <input type="email" value="${p.email||''}" placeholder="E-Mail-Adresse" onchange="updatePlayerEmail('${p.id}',this.value)">
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">Abwesenheiten</button><button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">Einladungslink erstellen</button>
-     <button class="btn danger" onclick="deletePlayer('${p.id}')">Löschen</button>
+
+     <input
+       type="email"
+       value="${p.email||''}"
+       placeholder="E-Mail-Adresse"
+       onchange="updatePlayerEmail('${p.id}',this.value)">
+
+     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">
+       Abwesenheiten
+     </button>
+
+     <button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">
+       Einladungslink erstellen
+     </button>
+
+     <button class="btn danger" onclick="deletePlayer('${p.id}')">
+       Löschen
+     </button>
    </div>`;
-   playerAdminList.appendChild(row)
+
+   playerAdminList.appendChild(row);
  }
 }
 function renderStats(){
  let html='<table class="stats-table"><thead><tr><th>Spieler</th><th>Nr.</th><th>Geburtstag</th><th>Position</th><th>Schuss</th><th>Dabei</th><th>Nicht dabei</th><th>Quote</th></tr></thead><tbody>';
- for(const p of data.players){
+ for(const p of sortPlayersByCategory(data.players)){
    let yes=0,no=0;
    for(const e of data.events){
      const s=(data.attendance[e.id]||{})[p.id];
