@@ -1240,6 +1240,226 @@ function exportMonthLabel(month){
   }).format(new Date(year,mon-1,1));
 }
 
+
+function attendanceListEvents(){
+  return (data.events||[])
+    .filter(event=>['training','game'].includes(event.type)&&event.date)
+    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+}
+
+function openAttendanceListExport(){
+  const events=attendanceListEvents();
+
+  if(!events.length){
+    alert('Es sind noch keine Trainings oder Spiele vorhanden.');
+    return;
+  }
+
+  const firstDate=events[0].date;
+  const lastDate=events[events.length-1].date;
+
+  openModal(`
+    <h2>Teilnahmeliste Trainings & Spiele</h2>
+
+    <div class="stack">
+      <p class="muted">
+        Im PDF erscheinen pro Termin nur die Spieler, die als dabei markiert sind.
+        Angezeigt werden ausschliesslich Name und Kategorie.
+      </p>
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        gap:10px;
+      ">
+        <div class="field">
+          <label>Von</label>
+          <input id="attendanceListFrom" type="date" value="${firstDate}">
+        </div>
+
+        <div class="field">
+          <label>Bis</label>
+          <input id="attendanceListTo" type="date" value="${lastDate}">
+        </div>
+      </div>
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        gap:10px;
+      ">
+        <label style="
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:10px;
+          border:1px solid var(--line);
+          border-radius:10px;
+          background:#fff;
+        ">
+          <input id="attendanceListTraining" type="checkbox" checked>
+          <strong>Trainings</strong>
+        </label>
+
+        <label style="
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:10px;
+          border:1px solid var(--line);
+          border-radius:10px;
+          background:#fff;
+        ">
+          <input id="attendanceListGames" type="checkbox" checked>
+          <strong>Spiele</strong>
+        </label>
+      </div>
+
+      <button class="btn primary" onclick="downloadAttendanceListPdf()">
+        📄 Teilnahmeliste herunterladen
+      </button>
+    </div>
+  `);
+}
+
+function downloadAttendanceListPdf(){
+  const from=document.getElementById('attendanceListFrom')?.value||'';
+  const to=document.getElementById('attendanceListTo')?.value||'';
+  const includeTraining=document.getElementById('attendanceListTraining')?.checked;
+  const includeGames=document.getElementById('attendanceListGames')?.checked;
+
+  if(!from||!to){
+    alert('Bitte Von- und Bis-Datum auswählen.');
+    return;
+  }
+
+  if(to<from){
+    alert('Das Bis-Datum muss nach dem Von-Datum liegen.');
+    return;
+  }
+
+  if(!includeTraining&&!includeGames){
+    alert('Bitte Trainings und/oder Spiele auswählen.');
+    return;
+  }
+
+  const types=[];
+  if(includeTraining)types.push('training');
+  if(includeGames)types.push('game');
+
+  const events=attendanceListEvents()
+    .filter(event=>
+      types.includes(event.type)&&
+      event.date>=from&&
+      event.date<=to
+    );
+
+  if(!events.length){
+    alert('Im gewählten Zeitraum sind keine passenden Termine vorhanden.');
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({
+    orientation:'portrait',
+    unit:'mm',
+    format:'a4'
+  });
+
+  const hasLogo=addLogoToPdf(doc,14,8,20,20);
+  const titleX=hasLogo?40:14;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.setTextColor(23,63,50);
+  doc.text(`${teamDisplayName()} – Teilnahmeliste`,titleX,15);
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  doc.setTextColor(70,80,75);
+  doc.text(
+    `${fmtDate(from)} bis ${fmtDate(to)}`,
+    titleX,
+    21
+  );
+
+  const body=[];
+
+  for(const event of events){
+    const attendance=data.attendance?.[event.id]||{};
+
+    const players=sortPlayersByCategory(
+      (data.players||[]).filter(player=>attendance[player.id]==='present')
+    );
+
+    if(!players.length){
+      body.push([
+        fmtDate(event.date),
+        event.type==='training'?'Training':'Spiel',
+        event.type==='game'
+          ? `${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
+          : (event.title||'Training'),
+        '–',
+        '–'
+      ]);
+      continue;
+    }
+
+    players.forEach((player,index)=>{
+      body.push([
+        index===0?fmtDate(event.date):'',
+        index===0?(event.type==='training'?'Training':'Spiel'):'',
+        index===0
+          ? (event.type==='game'
+              ? `${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
+              : (event.title||'Training'))
+          : '',
+        player.name,
+        playerCategoryLabel(player)
+      ]);
+    });
+  }
+
+  doc.autoTable({
+    startY:30,
+    head:[['Datum','Typ','Termin','Vorname / Name','Kategorie']],
+    body,
+    margin:{left:14,right:14},
+    styles:{
+      fontSize:8.3,
+      cellPadding:2.2,
+      valign:'middle'
+    },
+    columnStyles:{
+      0:{cellWidth:31},
+      1:{cellWidth:22},
+      2:{cellWidth:48},
+      3:{cellWidth:55},
+      4:{cellWidth:29}
+    },
+    headStyles:{
+      fillColor:[23,63,50],
+      textColor:[255,255,255],
+      fontStyle:'bold'
+    },
+    alternateRowStyles:{
+      fillColor:[248,250,249]
+    },
+    didParseCell:function(cell){
+      if(cell.section==='body'&&cell.column.index===0&&cell.cell.raw){
+        cell.cell.styles.fontStyle='bold';
+      }
+    },
+    theme:'grid'
+  });
+
+  doc.save(
+    `Teilnahmeliste_${from.replaceAll('-','')}_bis_${to.replaceAll('-','')}.pdf`
+  );
+
+  closeModal();
+}
+
 function openAttendanceMonthExport(){
   const months=trainingMonths();
 
@@ -2065,6 +2285,10 @@ function renderEvents(){
         <button class="btn soft"
                 onclick="openSeasonPlanExport()">
           📅 Trainings- und Spielplan
+        </button>
+        <button class="btn soft"
+                onclick="openAttendanceListExport()">
+          👥 Teilnahmeliste Trainings & Spiele
         </button>
       </div>`
    : '';
