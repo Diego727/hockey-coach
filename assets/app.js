@@ -1264,7 +1264,8 @@ function openAttendanceListExport(){
     <div class="stack">
       <p class="muted">
         Im PDF erscheinen pro Termin nur die Spieler, die als dabei markiert sind.
-        Angezeigt werden ausschliesslich Name und Kategorie.
+        Angezeigt werden Name, Position und Kategorie. Unter jedem Termin steht
+        zusätzlich die Anzahl Stürmer, Verteidiger, Torhüter und Spieler gesamt.
       </p>
 
       <div style="
@@ -1377,11 +1378,7 @@ function downloadAttendanceListPdf(){
   doc.setFont('helvetica','normal');
   doc.setFontSize(8);
   doc.setTextColor(70,80,75);
-  doc.text(
-    `${fmtDate(from)} bis ${fmtDate(to)}`,
-    titleX,
-    21
-  );
+  doc.text(`${fmtDate(from)} bis ${fmtDate(to)}`,titleX,21);
 
   const body=[];
 
@@ -1392,37 +1389,60 @@ function downloadAttendanceListPdf(){
       (data.players||[]).filter(player=>attendance[player.id]==='present')
     );
 
+    let forwards=0;
+    let defenders=0;
+    let goalies=0;
+
+    for(const player of players){
+      if(isGoaliePosition(player)){
+        goalies++;
+      }else if(isForwardPosition(player)){
+        forwards++;
+      }else if(isDefensePosition(player)){
+        defenders++;
+      }
+    }
+
     if(!players.length){
       body.push([
         fmtDate(event.date),
         event.type==='training'?'Training':'Spiel',
-        event.type==='game'
-          ? `${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
-          : (event.title||'Training'),
         '–',
+        'Keine Spieler dabei',
         '–'
       ]);
-      continue;
+    }else{
+      players.forEach((player,index)=>{
+        body.push([
+          index===0?fmtDate(event.date):'',
+          index===0?(event.type==='training'?'Training':'Spiel'):'',
+          positionLabel(player),
+          player.name,
+          playerCategoryLabel(player)
+        ]);
+      });
     }
 
-    players.forEach((player,index)=>{
-      body.push([
-        index===0?fmtDate(event.date):'',
-        index===0?(event.type==='training'?'Training':'Spiel'):'',
-        index===0
-          ? (event.type==='game'
-              ? `${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
-              : (event.title||'Training'))
-          : '',
-        player.name,
-        playerCategoryLabel(player)
-      ]);
-    });
+    body.push([
+      '',
+      '',
+      {
+        content:
+          `Total: ${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Torhüter · ${players.length} Spieler gesamt`,
+        colSpan:3,
+        styles:{
+          fontStyle:'bold',
+          fillColor:[229,240,235],
+          textColor:[23,63,50],
+          halign:'left'
+        }
+      }
+    ]);
   }
 
   doc.autoTable({
     startY:30,
-    head:[['Datum','Typ','Termin','Vorname / Name','Kategorie']],
+    head:[['Datum','Typ','Position','Vorname / Name','Kategorie']],
     body,
     margin:{left:14,right:14},
     styles:{
@@ -1433,9 +1453,9 @@ function downloadAttendanceListPdf(){
     columnStyles:{
       0:{cellWidth:31},
       1:{cellWidth:22},
-      2:{cellWidth:48},
-      3:{cellWidth:55},
-      4:{cellWidth:29}
+      2:{cellWidth:35},
+      3:{cellWidth:62},
+      4:{cellWidth:35}
     },
     headStyles:{
       fillColor:[23,63,50],
