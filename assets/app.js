@@ -1264,8 +1264,9 @@ function openAttendanceListExport(){
     <div class="stack">
       <p class="muted">
         Im PDF erscheinen pro Termin nur die Spieler, die als dabei markiert sind.
-        Angezeigt werden Name, Position und Kategorie. Unter jedem Termin steht
-        zusätzlich die Anzahl Stürmer, Verteidiger, Torhüter und Spieler gesamt.
+        Für jedes Training und Spiel wird eine eigene PDF-Seite erstellt.
+        Angezeigt werden Name, Position und Kategorie. Unten steht zusätzlich
+        die Anzahl Stürmer, Verteidiger, Torhüter und Spieler gesamt.
       </p>
 
       <div style="
@@ -1333,12 +1334,10 @@ function downloadAttendanceListPdf(){
     alert('Bitte Von- und Bis-Datum auswählen.');
     return;
   }
-
   if(to<from){
     alert('Das Bis-Datum muss nach dem Von-Datum liegen.');
     return;
   }
-
   if(!includeTraining&&!includeGames){
     alert('Bitte Trainings und/oder Spiele auswählen.');
     return;
@@ -1348,12 +1347,9 @@ function downloadAttendanceListPdf(){
   if(includeTraining)types.push('training');
   if(includeGames)types.push('game');
 
-  const events=attendanceListEvents()
-    .filter(event=>
-      types.includes(event.type)&&
-      event.date>=from&&
-      event.date<=to
-    );
+  const events=attendanceListEvents().filter(event=>
+    types.includes(event.type)&&event.date>=from&&event.date<=to
+  );
 
   if(!events.length){
     alert('Im gewählten Zeitraum sind keine passenden Termine vorhanden.');
@@ -1361,122 +1357,252 @@ function downloadAttendanceListPdf(){
   }
 
   const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({
-    orientation:'portrait',
-    unit:'mm',
-    format:'a4'
-  });
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
 
-  const hasLogo=addLogoToPdf(doc,14,8,20,20);
-  const titleX=hasLogo?40:14;
+  events.forEach((event,eventIndex)=>{
+    if(eventIndex>0)doc.addPage('a4','landscape');
 
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(16);
-  doc.setTextColor(23,63,50);
-  doc.text(`${teamDisplayName()} – Teilnahmeliste`,titleX,15);
-
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(8);
-  doc.setTextColor(70,80,75);
-  doc.text(`${fmtDate(from)} bis ${fmtDate(to)}`,titleX,21);
-
-  const body=[];
-
-  for(const event of events){
     const attendance=data.attendance?.[event.id]||{};
-
     const players=sortPlayersByCategory(
       (data.players||[]).filter(player=>attendance[player.id]==='present')
     );
 
-    let forwards=0;
-    let defenders=0;
-    let goalies=0;
-
+    let forwards=0,defenders=0,goalies=0;
     for(const player of players){
-      if(isGoaliePosition(player)){
-        goalies++;
-      }else if(isForwardPosition(player)){
-        forwards++;
-      }else if(isDefensePosition(player)){
-        defenders++;
-      }
+      if(isGoaliePosition(player))goalies++;
+      else if(isForwardPosition(player))forwards++;
+      else if(isDefensePosition(player))defenders++;
     }
 
-    if(!players.length){
-      body.push([
-        fmtDate(event.date),
-        event.type==='training'?'Training':'Spiel',
-        '–',
-        'Keine Spieler dabei',
-        '–'
-      ]);
-    }else{
-      players.forEach((player,index)=>{
-        body.push([
-          index===0?fmtDate(event.date):'',
-          index===0?(event.type==='training'?'Training':'Spiel'):'',
+    const hasLogo=addLogoToPdf(doc,12,6,18,18);
+    const titleX=hasLogo?36:12;
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(15);
+    doc.setTextColor(23,63,50);
+    doc.text(`${teamDisplayName()} – Teilnahmeliste`,titleX,13);
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9);
+    doc.setTextColor(60,70,65);
+
+    const typeLabel=event.type==='training'?'Training':'Spiel';
+    const extra=event.type==='game'
+      ? ` · ${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`
+      : '';
+    doc.text(`${fmtDate(event.date)} · ${event.time||''} · ${typeLabel}${extra}`,titleX,19);
+
+    const body=players.length
+      ? players.map(player=>[
           positionLabel(player),
           player.name,
           playerCategoryLabel(player)
-        ]);
-      });
-    }
+        ])
+      : [['–','Keine Spieler dabei','–']];
 
-    body.push([
-      '',
-      '',
-      {
-        content:
-          `Total: ${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Torhüter · ${players.length} Spieler gesamt`,
-        colSpan:3,
-        styles:{
-          fontStyle:'bold',
-          fillColor:[229,240,235],
-          textColor:[23,63,50],
-          halign:'left'
-        }
-      }
-    ]);
-  }
+    // Dynamic font size to keep each event on one page.
+    let fontSize=9;
+    let padding=2.2;
+    if(players.length>24){fontSize=8;padding=1.8;}
+    if(players.length>30){fontSize=7;padding=1.4;}
+    if(players.length>36){fontSize=6.3;padding=1.1;}
 
-  doc.autoTable({
-    startY:30,
-    head:[['Datum','Typ','Position','Vorname / Name','Kategorie']],
-    body,
-    margin:{left:14,right:14},
-    styles:{
-      fontSize:8.3,
-      cellPadding:2.2,
-      valign:'middle'
-    },
-    columnStyles:{
-      0:{cellWidth:31},
-      1:{cellWidth:22},
-      2:{cellWidth:35},
-      3:{cellWidth:62},
-      4:{cellWidth:35}
-    },
-    headStyles:{
-      fillColor:[23,63,50],
-      textColor:[255,255,255],
-      fontStyle:'bold'
-    },
-    alternateRowStyles:{
-      fillColor:[248,250,249]
-    },
-    didParseCell:function(cell){
-      if(cell.section==='body'&&cell.column.index===0&&cell.cell.raw){
-        cell.cell.styles.fontStyle='bold';
-      }
-    },
-    theme:'grid'
+    doc.autoTable({
+      startY:27,
+      head:[['Position','Vorname / Name','Kategorie']],
+      body,
+      margin:{left:12,right:12,bottom:20},
+      styles:{
+        fontSize,
+        cellPadding:padding,
+        valign:'middle'
+      },
+      columnStyles:{
+        0:{cellWidth:65},
+        1:{cellWidth:125},
+        2:{cellWidth:80}
+      },
+      headStyles:{
+        fillColor:[23,63,50],
+        textColor:[255,255,255],
+        fontStyle:'bold'
+      },
+      alternateRowStyles:{fillColor:[248,250,249]},
+      theme:'grid',
+      pageBreak:'avoid',
+      rowPageBreak:'avoid'
+    });
+
+    const pageHeight=doc.internal.pageSize.getHeight();
+    const totalY=Math.min((doc.lastAutoTable?.finalY||27)+7,pageHeight-9);
+
+    doc.setFillColor(229,240,235);
+    doc.roundedRect(12,totalY-5,270,9,1.5,1.5,'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.setTextColor(23,63,50);
+    doc.text(
+      `Total: ${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Torhüter · ${players.length} Spieler gesamt`,
+      16,totalY+1
+    );
   });
 
-  doc.save(
-    `Teilnahmeliste_${from.replaceAll('-','')}_bis_${to.replaceAll('-','')}.pdf`
+  doc.save(`Teilnahmeliste_${from.replaceAll('-','')}_bis_${to.replaceAll('-','')}.pdf`);
+  closeModal();
+}
+
+
+function openPositionSummaryExport(){
+  const events=attendanceListEvents();
+  if(!events.length){
+    alert('Es sind noch keine Trainings oder Spiele vorhanden.');
+    return;
+  }
+
+  openModal(`
+    <h2>Positionsübersicht</h2>
+    <div class="stack">
+      <p class="muted">
+        Kompakte Übersicht: Pro Training und Spiel eine Spalte mit der Anzahl
+        Stürmer, Verteidiger, Torhüter und Spieler gesamt.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+        <div class="field">
+          <label>Von</label>
+          <input id="positionSummaryFrom" type="date" value="${events[0].date}">
+        </div>
+        <div class="field">
+          <label>Bis</label>
+          <input id="positionSummaryTo" type="date" value="${events[events.length-1].date}">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px">
+          <input id="positionSummaryTraining" type="checkbox" checked>
+          <strong>Trainings</strong>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px">
+          <input id="positionSummaryGames" type="checkbox" checked>
+          <strong>Spiele</strong>
+        </label>
+      </div>
+      <button class="btn primary" onclick="downloadPositionSummaryPdf()">
+        📊 Positionsübersicht herunterladen
+      </button>
+    </div>
+  `);
+}
+
+function attendancePositionCounts(event){
+  const attendance=data.attendance?.[event.id]||{};
+  const players=(data.players||[]).filter(player=>attendance[player.id]==='present');
+
+  let forwards=0,defenders=0,goalies=0;
+  for(const player of players){
+    if(isGoaliePosition(player))goalies++;
+    else if(isForwardPosition(player))forwards++;
+    else if(isDefensePosition(player))defenders++;
+  }
+
+  return {forwards,defenders,goalies,total:players.length};
+}
+
+function downloadPositionSummaryPdf(){
+  const from=document.getElementById('positionSummaryFrom')?.value||'';
+  const to=document.getElementById('positionSummaryTo')?.value||'';
+  const includeTraining=document.getElementById('positionSummaryTraining')?.checked;
+  const includeGames=document.getElementById('positionSummaryGames')?.checked;
+
+  if(!from||!to||to<from){
+    alert('Bitte einen gültigen Zeitraum auswählen.');
+    return;
+  }
+
+  const types=[];
+  if(includeTraining)types.push('training');
+  if(includeGames)types.push('game');
+
+  if(!types.length){
+    alert('Bitte Trainings und/oder Spiele auswählen.');
+    return;
+  }
+
+  const events=attendanceListEvents().filter(event=>
+    types.includes(event.type)&&event.date>=from&&event.date<=to
   );
 
+  if(!events.length){
+    alert('Im gewählten Zeitraum sind keine Termine vorhanden.');
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+  // Keep the matrix readable: if there are many events, continue on further pages.
+  const eventsPerPage=12;
+
+  for(let offset=0,pageIndex=0;offset<events.length;offset+=eventsPerPage,pageIndex++){
+    if(pageIndex>0)doc.addPage('a4','landscape');
+
+    const pageEvents=events.slice(offset,offset+eventsPerPage);
+    const hasLogo=addLogoToPdf(doc,12,6,18,18);
+    const titleX=hasLogo?36:12;
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(15);
+    doc.setTextColor(23,63,50);
+    doc.text(`${teamDisplayName()} – Positionsübersicht`,titleX,13);
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(8);
+    doc.setTextColor(60,70,65);
+    doc.text(`${fmtDate(from)} bis ${fmtDate(to)}`,titleX,19);
+
+    const head=[['Position / Total',...pageEvents.map(event=>
+      `${fmtDate(event.date)}\n${event.type==='training'?'Training':'Spiel'}`
+    )]];
+
+    const counts=pageEvents.map(attendancePositionCounts);
+    const body=[
+      ['Stürmer',...counts.map(c=>String(c.forwards))],
+      ['Verteidiger',...counts.map(c=>String(c.defenders))],
+      ['Torhüter',...counts.map(c=>String(c.goalies))],
+      ['Spieler gesamt',...counts.map(c=>String(c.total))]
+    ];
+
+    doc.autoTable({
+      startY:27,
+      head,
+      body,
+      margin:{left:12,right:12},
+      styles:{
+        fontSize:8,
+        cellPadding:3,
+        halign:'center',
+        valign:'middle',
+        overflow:'linebreak'
+      },
+      columnStyles:{
+        0:{cellWidth:32,halign:'left',fontStyle:'bold'}
+      },
+      headStyles:{
+        fillColor:[23,63,50],
+        textColor:[255,255,255],
+        fontStyle:'bold'
+      },
+      didParseCell:function(cell){
+        if(cell.section==='body'&&cell.row.index===3){
+          cell.cell.styles.fontStyle='bold';
+          cell.cell.styles.fillColor=[229,240,235];
+          cell.cell.styles.textColor=[23,63,50];
+        }
+      },
+      theme:'grid'
+    });
+  }
+
+  doc.save(`Positionsuebersicht_${from.replaceAll('-','')}_bis_${to.replaceAll('-','')}.pdf`);
   closeModal();
 }
 
@@ -2309,6 +2435,10 @@ function renderEvents(){
         <button class="btn soft"
                 onclick="openAttendanceListExport()">
           👥 Teilnahmeliste Trainings & Spiele
+        </button>
+        <button class="btn soft"
+                onclick="openPositionSummaryExport()">
+          📊 Positionsübersicht
         </button>
       </div>`
    : '';
