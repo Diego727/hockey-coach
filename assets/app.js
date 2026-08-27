@@ -2434,145 +2434,222 @@ function absenceReason(eventId,playerId){return (data.attendance[eventId]||{})[p
 
 function ensurePlayerAdminGridStyles(){
   if(document.getElementById('playerAdminGridStyles'))return;
+
   const style=document.createElement('style');
   style.id='playerAdminGridStyles';
+
   style.textContent=`
-    #playerAdminList .player-admin-grid > *{
-      min-width:0;
+    #playerAdminList{
+      width:100%;
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
     }
 
-    @media(max-width:1100px){
-      #playerAdminList .player-admin-grid{
-        grid-template-columns:minmax(190px,1.25fr) minmax(135px,.85fr) minmax(150px,1fr) 100px 75px 120px minmax(190px,1.1fr) auto !important;
-        gap:8px !important;
-      }
+    #playerAdminList .player-category-heading{
+      margin:18px 0 8px;
+      padding:9px 12px;
+      border-radius:10px;
+      background:#e5f0eb;
+      color:#173f32;
+      font-weight:900;
+      font-size:14px;
+      border:1px solid #cfe0d8;
+      min-width:1360px;
+      box-sizing:border-box;
+    }
+
+    #playerAdminList .player-admin-table-row{
+      display:grid !important;
+      grid-template-columns:
+        280px
+        150px
+        155px
+        82px
+        68px
+        108px
+        190px
+        112px
+        165px
+        78px;
+      gap:8px;
+      align-items:center;
+      min-width:1360px;
+      width:1360px;
+      box-sizing:border-box;
+      padding:8px 0;
+    }
+
+    #playerAdminList .player-cell{
+      min-width:0;
+      width:100%;
+      box-sizing:border-box;
+    }
+
+    #playerAdminList .player-cell-name{
+      padding-left:0;
+    }
+
+    #playerAdminList .player-cell-name .name{
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    #playerAdminList .player-cell-name .role{
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    #playerAdminList .player-cell select,
+    #playerAdminList .player-cell input,
+    #playerAdminList .player-cell button{
+      width:100%;
+      max-width:100%;
+      min-width:0;
+      box-sizing:border-box;
+      margin:0;
+    }
+
+    #playerAdminList .player-cell-position button,
+    #playerAdminList .player-cell-absence button,
+    #playerAdminList .player-cell-invite button,
+    #playerAdminList .player-cell-delete button{
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    #playerAdminList .player-cell-delete button{
+      padding-left:8px;
+      padding-right:8px;
     }
 
     @media(max-width:760px){
-      #playerAdminList{
-        overflow-x:auto;
-        -webkit-overflow-scrolling:touch;
+      #playerAdminList .player-admin-table-row{
+        min-width:1360px;
+        width:1360px;
       }
 
-      #playerAdminList .player-admin-grid{
-        min-width:1180px;
+      #playerAdminList .player-category-heading{
+        min-width:1360px;
       }
     }
   `;
+
   document.head.appendChild(style);
 }
 
 function renderPlayers(){
- ensurePlayerAdminGridStyles();
- upgradePlayerPositionInput();
- playerAdminList.innerHTML='';
+  ensurePlayerAdminGridStyles();
+  upgradePlayerPositionInput();
+  playerAdminList.innerHTML='';
 
- let lastCategory='';
+  let lastCategory='';
 
- for(const p of sortPlayersByCategory(data.players)){
-   const categoryLabel=playerCategoryLabel(p);
+  for(const p of sortPlayersByCategory(data.players)){
+    const categoryLabel=playerCategoryLabel(p);
 
-   if(categoryLabel!==lastCategory){
-     const heading=document.createElement('div');
-     heading.className='player-category-heading';
-     heading.style.cssText=`
-       margin:18px 0 8px;
-       padding:9px 12px;
-       border-radius:10px;
-       background:#e5f0eb;
-       color:#173f32;
-       font-weight:900;
-       font-size:14px;
-       border:1px solid #cfe0d8;
-     `;
-     heading.textContent=categoryLabel;
-     playerAdminList.appendChild(heading);
-     lastCategory=categoryLabel;
-   }
+    if(categoryLabel!==lastCategory){
+      const heading=document.createElement('div');
+      heading.className='player-category-heading';
+      heading.textContent=categoryLabel;
+      playerAdminList.appendChild(heading);
+      lastCategory=categoryLabel;
+    }
 
-   const row=document.createElement('div');
-   row.className='player player-admin-grid';
-   row.style.cssText=`
-     display:grid;
-     grid-template-columns:minmax(220px,1.45fr) minmax(150px,.9fr) minmax(170px,1fr) minmax(105px,.65fr) 82px 130px minmax(210px,1.25fr) auto;
-     gap:10px;
-     align-items:center;
-     width:100%;
-     box-sizing:border-box;
-   `;
-   row.innerHTML=`<div style="min-width:0">
-     <div class="name">${p.name}</div>
-     <div class="role" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-       ${positionLabel(p)} · ${categoryLabel} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}
-     </div>
-   </div>
-   <div class="row player-admin-controls" style="display:contents">
-     <select
-       title="Kategorie"
-       style="width:100%;min-width:0"
-       onchange="changePlayerCategory('${p.id}',this.value)">
-       <option value="" ${!playerCategory(p)?'selected':''}>Kategorie wählen</option>
-       ${PLAYER_CATEGORIES.map(category=>`
-         <option value="${category}" ${playerCategory(p)===category?'selected':''}>
-           ${category}
-         </option>
-       `).join('')}
-     </select>
+    const row=document.createElement('div');
+    row.className='player player-admin-table-row';
 
-     <button class="btn soft"
-       style="width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-       onclick="openCoachPositionEditor('${p.id}')">
-       Position: ${positionLabel(p)}
-     </button>
+    row.innerHTML=`
+      <div class="player-cell player-cell-name">
+        <div class="name">${p.name}</div>
+        <div class="role">
+          ${positionLabel(p)} · ${categoryLabel} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}
+        </div>
+      </div>
 
-     <select style="width:100%;min-width:0" onchange="changeShot('${p.id}',this.value)">
-       <option ${p.shot==='Links'?'selected':''}>Links</option>
-       <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
-     </select>
+      <div class="player-cell player-cell-category">
+        <select
+          title="Kategorie"
+          onchange="changePlayerCategory('${p.id}',this.value)">
+          <option value="" ${!playerCategory(p)?'selected':''}>Kategorie wählen</option>
+          ${PLAYER_CATEGORIES.map(category=>`
+            <option value="${category}" ${playerCategory(p)===category?'selected':''}>
+              ${category}
+            </option>
+          `).join('')}
+        </select>
+      </div>
 
-     <input
-       style="width:80px"
-       type="number"
-       min="0"
-       max="99"
-       value="${p.jerseyNumber||''}"
-       placeholder="Nr."
-       onchange="changeNumber('${p.id}',this.value)">
+      <div class="player-cell player-cell-position">
+        <button class="btn soft"
+          onclick="openCoachPositionEditor('${p.id}')">
+          Position: ${positionLabel(p)}
+        </button>
+      </div>
 
-     <input
-       type="text"
-       inputmode="numeric"
-       autocomplete="bday"
-       value="${birthdayToDisplay(p.birthday)}"
-       placeholder="TT.MM.JJJJ"
-       maxlength="10"
-       style="width:100%;min-width:0"
-       onchange="changeBirthday('${p.id}',this.value,this)"
-       onblur="changeBirthday('${p.id}',this.value,this)"
-     >
+      <div class="player-cell player-cell-shot">
+        <select onchange="changeShot('${p.id}',this.value)">
+          <option ${p.shot==='Links'?'selected':''}>Links</option>
+          <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
+        </select>
+      </div>
 
-     <input
-       type="email"
-       value="${p.email||''}"
-       placeholder="E-Mail-Adresse"
-       style="width:100%;min-width:0"
-       onchange="updatePlayerEmail('${p.id}',this.value)">
+      <div class="player-cell player-cell-number">
+        <input
+          type="number"
+          min="0"
+          max="99"
+          value="${p.jerseyNumber||''}"
+          placeholder="Nr."
+          onchange="changeNumber('${p.id}',this.value)">
+      </div>
 
-     <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap">
-       <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">
-         Abwesenheiten
-       </button>
-       <button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">
-         Einladungslink erstellen
-       </button>
-       <button class="btn danger" onclick="deletePlayer('${p.id}')">
-         Löschen
-       </button>
-     </div>
-   </div>`;
+      <div class="player-cell player-cell-birthday">
+        <input
+          type="text"
+          inputmode="numeric"
+          autocomplete="bday"
+          value="${birthdayToDisplay(p.birthday)}"
+          placeholder="TT.MM.JJJJ"
+          maxlength="10"
+          onchange="changeBirthday('${p.id}',this.value,this)"
+          onblur="changeBirthday('${p.id}',this.value,this)">
+      </div>
 
-   playerAdminList.appendChild(row);
- }
+      <div class="player-cell player-cell-email">
+        <input
+          type="email"
+          value="${p.email||''}"
+          placeholder="E-Mail-Adresse"
+          onchange="updatePlayerEmail('${p.id}',this.value)">
+      </div>
+
+      <div class="player-cell player-cell-absence">
+        <button class="btn soft"
+          onclick="openPlayerAbsences('${p.id}')">
+          Abwesenheiten
+        </button>
+      </div>
+
+      <div class="player-cell player-cell-invite">
+        <button class="btn soft"
+          onclick="createPlayerAccessWithPassword('${p.id}')">
+          Einladungslink erstellen
+        </button>
+      </div>
+
+      <div class="player-cell player-cell-delete">
+        <button class="btn danger"
+          onclick="deletePlayer('${p.id}')">
+          Löschen
+        </button>
+      </div>
+    `;
+
+    playerAdminList.appendChild(row);
+  }
 }
 function renderStats(){
  let html='<table class="stats-table"><thead><tr><th>Spieler</th><th>Nr.</th><th>Geburtstag</th><th>Position</th><th>Schuss</th><th>Dabei</th><th>Nicht dabei</th><th>Quote</th></tr></thead><tbody>';
