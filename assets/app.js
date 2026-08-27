@@ -2431,7 +2431,39 @@ function recalculateAttendanceFromAbsences(){
 }
 function absenceReason(eventId,playerId){return (data.attendance[eventId]||{})[playerId+'_reason']||''}
 
+
+function ensurePlayerAdminGridStyles(){
+  if(document.getElementById('playerAdminGridStyles'))return;
+  const style=document.createElement('style');
+  style.id='playerAdminGridStyles';
+  style.textContent=`
+    #playerAdminList .player-admin-grid > *{
+      min-width:0;
+    }
+
+    @media(max-width:1100px){
+      #playerAdminList .player-admin-grid{
+        grid-template-columns:minmax(190px,1.25fr) minmax(135px,.85fr) minmax(150px,1fr) 100px 75px 120px minmax(190px,1.1fr) auto !important;
+        gap:8px !important;
+      }
+    }
+
+    @media(max-width:760px){
+      #playerAdminList{
+        overflow-x:auto;
+        -webkit-overflow-scrolling:touch;
+      }
+
+      #playerAdminList .player-admin-grid{
+        min-width:1180px;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function renderPlayers(){
+ ensurePlayerAdminGridStyles();
  upgradePlayerPositionInput();
  playerAdminList.innerHTML='';
 
@@ -2459,16 +2491,25 @@ function renderPlayers(){
    }
 
    const row=document.createElement('div');
-   row.className='player';
-   row.innerHTML=`<div>
+   row.className='player player-admin-grid';
+   row.style.cssText=`
+     display:grid;
+     grid-template-columns:minmax(220px,1.45fr) minmax(150px,.9fr) minmax(170px,1fr) minmax(105px,.65fr) 82px 130px minmax(210px,1.25fr) auto;
+     gap:10px;
+     align-items:center;
+     width:100%;
+     box-sizing:border-box;
+   `;
+   row.innerHTML=`<div style="min-width:0">
      <div class="name">${p.name}</div>
-     <div class="role">
+     <div class="role" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
        ${positionLabel(p)} · ${categoryLabel} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}
      </div>
    </div>
-   <div class="row">
+   <div class="row player-admin-controls" style="display:contents">
      <select
        title="Kategorie"
+       style="width:100%;min-width:0"
        onchange="changePlayerCategory('${p.id}',this.value)">
        <option value="" ${!playerCategory(p)?'selected':''}>Kategorie wählen</option>
        ${PLAYER_CATEGORIES.map(category=>`
@@ -2478,11 +2519,13 @@ function renderPlayers(){
        `).join('')}
      </select>
 
-     <button class="btn soft" onclick="openCoachPositionEditor('${p.id}')">
+     <button class="btn soft"
+       style="width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+       onclick="openCoachPositionEditor('${p.id}')">
        Position: ${positionLabel(p)}
      </button>
 
-     <select onchange="changeShot('${p.id}',this.value)">
+     <select style="width:100%;min-width:0" onchange="changeShot('${p.id}',this.value)">
        <option ${p.shot==='Links'?'selected':''}>Links</option>
        <option ${p.shot==='Rechts'?'selected':''}>Rechts</option>
      </select>
@@ -2503,7 +2546,7 @@ function renderPlayers(){
        value="${birthdayToDisplay(p.birthday)}"
        placeholder="TT.MM.JJJJ"
        maxlength="10"
-       style="width:125px"
+       style="width:100%;min-width:0"
        onchange="changeBirthday('${p.id}',this.value,this)"
        onblur="changeBirthday('${p.id}',this.value,this)"
      >
@@ -2512,19 +2555,20 @@ function renderPlayers(){
        type="email"
        value="${p.email||''}"
        placeholder="E-Mail-Adresse"
+       style="width:100%;min-width:0"
        onchange="updatePlayerEmail('${p.id}',this.value)">
 
-     <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">
-       Abwesenheiten
-     </button>
-
-     <button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">
-       Einladungslink erstellen
-     </button>
-
-     <button class="btn danger" onclick="deletePlayer('${p.id}')">
-       Löschen
-     </button>
+     <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap">
+       <button class="btn soft" onclick="openPlayerAbsences('${p.id}')">
+         Abwesenheiten
+       </button>
+       <button class="btn soft" onclick="createPlayerAccessWithPassword('${p.id}')">
+         Einladungslink erstellen
+       </button>
+       <button class="btn danger" onclick="deletePlayer('${p.id}')">
+         Löschen
+       </button>
+     </div>
    </div>`;
 
    playerAdminList.appendChild(row);
