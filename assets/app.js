@@ -899,6 +899,18 @@ function normalizedPlayerPositions(playerOrValue){
   return normalized;
 }
 
+
+function lineupPlayerMeta(player){
+  if(!player)return '';
+  const position=positionLabel(player);
+  const category=(typeof playerCategoryLabel==='function')
+    ? playerCategoryLabel(player)
+    : '';
+  return [position,category]
+    .filter(value=>value&&value!=='Nicht zugewiesen'&&value!=='–')
+    .join(' · ');
+}
+
 function positionLabel(playerOrValue){
   const positions=normalizedPlayerPositions(playerOrValue);
   return positions.length?positions.join(' / '):'–';
@@ -1755,11 +1767,40 @@ function downloadAttendanceMonthPdf(){
     return data.players.filter(player=>(record[player.id]||'open')==='present');
   }
 
+  function monthlyPositionCounts(event){
+    const players=presentPlayers(event);
+
+    let forwards=0;
+    let defenders=0;
+    let goalies=0;
+
+    for(const player of players){
+      // Ein Spieler wird pro Termin genau EINMAL gezählt.
+      // Priorität: Goalie -> Stürmer -> Verteidiger.
+      if(isGoaliePosition(player)){
+        goalies++;
+      }else if(isForwardPosition(player)){
+        forwards++;
+      }else if(isDefensePosition(player)){
+        defenders++;
+      }
+    }
+
+    return {
+      forwards,
+      defenders,
+      goalies,
+      total:forwards+defenders+goalies
+    };
+  }
+
+  const monthlyCounts=trainings.map(monthlyPositionCounts);
+
   const summaryBody=[
-    ['Stürmer',...trainings.map(event=>presentPlayers(event).filter(player=>player.position==='Stürmer').length)],
-    ['Verteidiger',...trainings.map(event=>presentPlayers(event).filter(player=>player.position==='Verteidiger').length)],
-    ['Goalies',...trainings.map(event=>presentPlayers(event).filter(player=>player.position==='Goalie').length)],
-    ['Total',...trainings.map(event=>presentPlayers(event).length)]
+    ['Stürmer',...monthlyCounts.map(count=>count.forwards)],
+    ['Verteidiger',...monthlyCounts.map(count=>count.defenders)],
+    ['Goalies',...monthlyCounts.map(count=>count.goalies)],
+    ['Total',...monthlyCounts.map(count=>count.total)]
   ];
 
   doc.autoTable({
@@ -1982,6 +2023,91 @@ function downloadSeasonPlanPdf(){
 
 let coachCalendarMonth=new Date().toISOString().slice(0,7);
 let coachCalendarType='training';
+
+
+function ensureLineupPlayerPoolStyles(){
+  if(document.getElementById('lineupPlayerPoolStyles'))return;
+
+  const style=document.createElement('style');
+  style.id='lineupPlayerPoolStyles';
+  style.textContent=`
+    .lineup-player-meta{
+      display:block;
+      margin-top:3px;
+      font-size:11px;
+      line-height:1.2;
+      color:#68758a;
+      font-weight:700;
+    }
+
+    .lineup-player-pool{
+      position:sticky !important;
+      top:10px;
+      align-self:flex-start;
+      max-height:calc(100vh - 20px);
+      overflow-y:auto;
+      overscroll-behavior:contain;
+      z-index:10;
+      background:inherit;
+    }
+
+    @media(max-width:900px){
+      .lineup-player-pool{
+        top:6px;
+        max-height:42vh;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function activateStickyLineupPlayerPool(){
+  ensureLineupPlayerPoolStyles();
+
+  const draggablePlayers=[...document.querySelectorAll('[draggable="true"]')]
+    .filter(el=>{
+      const text=(el.textContent||'').trim();
+      return text && !el.closest('[data-slot]');
+    });
+
+  if(!draggablePlayers.length)return;
+
+  let bestContainer=null;
+  let bestCount=0;
+
+  for(const playerEl of draggablePlayers){
+    let container=playerEl.parentElement;
+    for(let depth=0;container&&depth<5;depth++,container=container.parentElement){
+      const count=container.querySelectorAll?.('[draggable="true"]')?.length||0;
+      if(count>bestCount){
+        bestCount=count;
+        bestContainer=container;
+      }
+    }
+  }
+
+  if(bestContainer&&bestCount>=2){
+    bestContainer.classList.add('lineup-player-pool');
+  }
+
+  for(const el of draggablePlayers){
+    if(el.querySelector('.lineup-player-meta'))continue;
+
+    const text=(el.textContent||'').trim();
+    const player=(data.players||[]).find(p=>
+      text===p.name || text.startsWith(p.name)
+    );
+    if(!player)continue;
+
+    const metaText=lineupPlayerMeta(player);
+    if(!metaText)continue;
+
+    const meta=document.createElement('span');
+    meta.className='lineup-player-meta';
+    meta.textContent=metaText;
+    el.appendChild(meta);
+  }
+}
 
 function ensureCoachPortalTheme(){
   if(document.getElementById('coachPortalAltstadtTheme'))return;
@@ -6770,7 +6896,8 @@ function enableTouchLineupSelection(eventId){
 }
 
 
-function renderAll(){if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
+function renderAll(){
+  setTimeout(()=>activateStickyLineupPlayerPool(),0);if(!activeTeamKey)return;renderEvents();renderSelected();renderPlayers();renderStats();renderQuickPlanner()}
 function initializeBirthdayInput(){
   const input=document.getElementById('playerBirthday');
   if(!input)return;
@@ -6788,3 +6915,5 @@ requestAnimationFrame(()=>{
   initializeSeriesDayTimes();
   initializeBirthdayInput();
 });
+
+setTimeout(()=>activateStickyLineupPlayerPool(),300);
