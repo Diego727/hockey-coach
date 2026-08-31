@@ -2025,36 +2025,86 @@ let coachCalendarMonth=new Date().toISOString().slice(0,7);
 let coachCalendarType='training';
 
 
+
 function ensureLineupPlayerPoolStyles(){
   if(document.getElementById('lineupPlayerPoolStyles'))return;
 
   const style=document.createElement('style');
   style.id='lineupPlayerPoolStyles';
   style.textContent=`
+    #playerPool{
+      position:sticky !important;
+      top:10px !important;
+      z-index:20 !important;
+      background:#fff !important;
+      border:1px solid #d8e3de !important;
+      border-radius:12px !important;
+      padding:10px !important;
+      max-height:calc(100vh - 20px) !important;
+      overflow-y:auto !important;
+      overscroll-behavior:contain !important;
+    }
+
+    #playerPool .drag-player{
+      display:block !important;
+      opacity:1 !important;
+      cursor:grab !important;
+      user-select:none !important;
+      -webkit-user-select:none !important;
+      margin-bottom:7px !important;
+    }
+
+    #playerPool .drag-player.used{
+      opacity:1 !important;
+      cursor:grab !important;
+      background:#eef6f2 !important;
+      border-color:#9fc7b5 !important;
+    }
+
+    #playerPool .drag-player.used::after{
+      content:"Eingesetzt";
+      display:inline-block;
+      margin-left:7px;
+      padding:2px 6px;
+      border-radius:999px;
+      background:#dceee5;
+      color:#173f32;
+      font-size:10px;
+      font-weight:800;
+      vertical-align:middle;
+    }
+
     .lineup-player-meta{
       display:block;
       margin-top:3px;
       font-size:11px;
-      line-height:1.2;
+      line-height:1.25;
       color:#68758a;
       font-weight:700;
     }
 
-    .lineup-player-pool{
-      position:sticky !important;
-      top:10px;
-      align-self:flex-start;
-      max-height:calc(100vh - 20px);
-      overflow-y:auto;
-      overscroll-behavior:contain;
-      z-index:10;
-      background:inherit;
+    #lineupBoard .assigned-position{
+      display:block;
+      margin-top:3px;
+      font-size:11px;
+      color:#68758a;
+      font-weight:700;
     }
 
     @media(max-width:900px){
-      .lineup-player-pool{
-        top:6px;
-        max-height:42vh;
+      #playerPool{
+        top:6px !important;
+        max-height:38vh !important;
+        display:flex !important;
+        flex-wrap:nowrap !important;
+        gap:8px !important;
+        overflow-x:auto !important;
+        overflow-y:hidden !important;
+      }
+
+      #playerPool .drag-player{
+        flex:0 0 150px !important;
+        margin-bottom:0 !important;
       }
     }
   `;
@@ -2063,50 +2113,6 @@ function ensureLineupPlayerPoolStyles(){
 
 function activateStickyLineupPlayerPool(){
   ensureLineupPlayerPoolStyles();
-
-  const draggablePlayers=[...document.querySelectorAll('[draggable="true"]')]
-    .filter(el=>{
-      const text=(el.textContent||'').trim();
-      return text && !el.closest('[data-slot]');
-    });
-
-  if(!draggablePlayers.length)return;
-
-  let bestContainer=null;
-  let bestCount=0;
-
-  for(const playerEl of draggablePlayers){
-    let container=playerEl.parentElement;
-    for(let depth=0;container&&depth<5;depth++,container=container.parentElement){
-      const count=container.querySelectorAll?.('[draggable="true"]')?.length||0;
-      if(count>bestCount){
-        bestCount=count;
-        bestContainer=container;
-      }
-    }
-  }
-
-  if(bestContainer&&bestCount>=2){
-    bestContainer.classList.add('lineup-player-pool');
-  }
-
-  for(const el of draggablePlayers){
-    if(el.querySelector('.lineup-player-meta'))continue;
-
-    const text=(el.textContent||'').trim();
-    const player=(data.players||[]).find(p=>
-      text===p.name || text.startsWith(p.name)
-    );
-    if(!player)continue;
-
-    const metaText=lineupPlayerMeta(player);
-    if(!metaText)continue;
-
-    const meta=document.createElement('span');
-    meta.className='lineup-player-meta';
-    meta.textContent=metaText;
-    el.appendChild(meta);
-  }
 }
 
 function ensureCoachPortalTheme(){
@@ -3193,7 +3199,11 @@ function makeSlot(eventId,line,posKey,label,pid,isGoalie=false){
   slot.dataset.pos=posKey;
   slot.dataset.goalie=isGoalie?'1':'0';
   const player=data.players.find(p=>p.id===pid);
-  slot.innerHTML=`<div class="slot-label">${label}</div>${player?`<div class="assigned">${player.name}</div><button class="remove" onclick="removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie})">Entfernen</button>`:'<div class="muted">Spieler hierher ziehen</div>'}`;
+  slot.innerHTML=`<div class="slot-label">${label}</div>${player?`
+    <div class="assigned">${player.name}</div>
+    <div class="assigned-position">${positionLabel(player)}</div>
+    <button class="remove" onclick="removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie})">Entfernen</button>
+  `:'<div class="muted">Spieler hierher ziehen</div>'}`;
   slot.addEventListener('dragover',ev=>{ev.preventDefault();slot.classList.add('dragover')});
   slot.addEventListener('dragleave',()=>slot.classList.remove('dragover'));
   slot.addEventListener('drop',ev=>{
@@ -3225,12 +3235,15 @@ function renderLineup(eventId){
   for(const p of eligiblePlayers){
     const item=document.createElement('div');
     item.className='drag-player'+(used.has(p.id)?' used':'');
-    item.textContent=p.name;
-    item.draggable=!used.has(p.id);
+    item.innerHTML=`
+      <strong>${p.name}</strong>
+      <span class="lineup-player-meta">${lineupPlayerMeta(p)}</span>
+    `;
+    item.draggable=true;
     item.dataset.playerId=p.id;
     item.addEventListener('dragstart',ev=>{
-      if(used.has(p.id)){ev.preventDefault();return}
-      ev.dataTransfer.setData('text/plain',p.id)
+      ev.dataTransfer.setData('text/plain',p.id);
+      ev.dataTransfer.effectAllowed='move';
     });
     pool.appendChild(item);
   }
@@ -3271,6 +3284,7 @@ function renderLineup(eventId){
     rink.appendChild(row);
   }
   board.appendChild(rink);
+  activateStickyLineupPlayerPool();
   requestAnimationFrame(()=>enableTouchLineupSelection(eventId));
 }
 function clearPlayerFromLineup(eventId,pid){
@@ -6856,8 +6870,6 @@ function enableTouchLineupSelection(eventId){
 
   pool.querySelectorAll('.drag-player').forEach(item=>{
     item.addEventListener('click',()=>{
-      if(item.classList.contains('used'))return;
-
       mobileSelectedLineupPlayerId=item.dataset.playerId||null;
 
       pool.querySelectorAll('.drag-player')
