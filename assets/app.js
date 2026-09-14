@@ -61,7 +61,39 @@ const cloudClient=window.supabase.createClient(
     }
   }
 );
+
 const SHARED_CLUB_ID='7c807357-d90b-4ca4-9d20-f61a82ff6065';
+
+// Zusätzliche Zugriffsrollen.
+// Admin: voller Coach-Zugang, auch wenn für dieselbe E-Mail ein Spielerprofil existiert.
+// Viewer: reine Leseansicht für Trainings und Spiele der 2. Liga.
+const ADMIN_EMAILS=new Set([
+  'noah.buergi@gmail.com'
+]);
+
+const VIEWER_ACCOUNTS={
+  'reto.waldmeier@olten.ch':{
+    name:'Reto Waldmeier',
+    teamKey:'second'
+  },
+  'thesi@bluewin.ch':{
+    name:'Thesi',
+    teamKey:'second'
+  }
+};
+
+function normalizedLoginEmail(){
+  return String(cloudUser?.email||'').trim().toLowerCase();
+}
+
+function isAdminAccount(){
+  return ADMIN_EMAILS.has(normalizedLoginEmail());
+}
+
+function currentViewerAccount(){
+  return VIEWER_ACCOUNTS[normalizedLoginEmail()]||null;
+}
+
 const CALENDAR_FUNCTION_URL=
   `${SUPABASE_URL}/functions/v1/team-calendar`;
 
@@ -4066,12 +4098,14 @@ async function cloudSignOut(){
   await cloudClient.auth.signOut();
 }
 function scheduleCloudSave(){
+  if(currentViewerAccount())return;
   if(!cloudReady||!cloudUser)return;
   clearTimeout(cloudSaveTimer);
   setCloudStatus('Änderungen werden gespeichert …','syncing');
   cloudSaveTimer=setTimeout(pushCloudState,700);
 }
 async function pushCloudState(){
+  if(currentViewerAccount())return;
   if(!cloudReady||!cloudUser||cloudSaving)return;
   cloudSaving=true;
   const now=new Date().toISOString();
@@ -4132,6 +4166,447 @@ function startCloudPolling(){
   document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='visible'&&cloudUser)loadCloudState();
   });
+}
+
+
+
+let viewerPollTimer=null;
+let viewerType='training';
+let viewerMonth=new Date().toISOString().slice(0,7);
+
+function hideViewerPortal(){
+  clearInterval(viewerPollTimer);
+  viewerPollTimer=null;
+  document.getElementById('viewerPortalApp')?.remove();
+}
+
+function viewerEventTitle(event){
+  if(event.type==='game'){
+    const opponent=event.opponent||event.title||'Gegner offen';
+    const homeAway=event.homeAway==='home'
+      ? 'Heim'
+      : event.homeAway==='away'
+        ? 'Auswärts'
+        : '';
+    return [opponent,homeAway].filter(Boolean).join(' · ');
+  }
+  return event.title?.trim()||'Training';
+}
+
+function viewerMonths(events,type){
+  return [...new Set(
+    (events||[])
+      .filter(event=>event.type===type&&event.date)
+      .map(event=>event.date.slice(0,7))
+  )].sort();
+}
+
+function ensureViewerMonth(events){
+  const months=viewerMonths(events,viewerType);
+  if(!months.length)return;
+
+  if(months.includes(viewerMonth))return;
+
+  const todayMonth=new Date().toISOString().slice(0,7);
+  if(months.includes(todayMonth)){
+    viewerMonth=todayMonth;
+    return;
+  }
+
+  viewerMonth=months.find(month=>month>todayMonth)||months[months.length-1];
+}
+
+function setViewerType(type){
+  viewerType=type;
+  const root=document.getElementById('viewerPortalApp');
+  if(root)renderViewerPortal(root);
+}
+
+function setViewerMonth(month){
+  viewerMonth=month;
+  const root=document.getElementById('viewerPortalApp');
+  if(root)renderViewerPortal(root);
+}
+
+function shiftViewerMonth(delta){
+  const [year,month]=viewerMonth.split('-').map(Number);
+  const d=new Date(year,month-1+delta,1);
+  viewerMonth=[
+    d.getFullYear(),
+    String(d.getMonth()+1).padStart(2,'0')
+  ].join('-');
+
+  const root=document.getElementById('viewerPortalApp');
+  if(root)renderViewerPortal(root);
+}
+
+function viewerMonthLabel(month){
+  const [year,mon]=month.split('-').map(Number);
+  return new Intl.DateTimeFormat('de-CH',{
+    month:'long',
+    year:'numeric'
+  }).format(new Date(year,mon-1,1));
+}
+
+function viewerWeekdayShort(dateString){
+  return new Intl.DateTimeFormat('de-CH',{
+    weekday:'short'
+  }).format(new Date(dateString+'T12:00:00'));
+}
+
+function viewerDayNumber(dateString){
+  return new Date(dateString+'T12:00:00').getDate();
+}
+
+function renderViewerPortal(root){
+  const viewer=currentViewerAccount();
+  if(!viewer||!cloudRoot?.teams?.[viewer.teamKey])return;
+
+  const team=cloudRoot.teams[viewer.teamKey];
+  const events=(team.events||[])
+    .filter(event=>['training','game'].includes(event.type)&&event.date)
+    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+
+  ensureViewerMonth(events);
+
+  const months=viewerMonths(events,viewerType);
+  const filtered=events.filter(event=>
+    event.type===viewerType&&event.date.startsWith(viewerMonth)
+  );
+
+  const cards=filtered.length
+    ? filtered.map(event=>`
+        <div class="viewer-event-card">
+          <div class="viewer-date-box">
+            <div class="viewer-weekday">${viewerWeekdayShort(event.date)}</div>
+            <div class="viewer-day">${viewerDayNumber(event.date)}</div>
+          </div>
+
+          <div class="viewer-event-main">
+            <div class="viewer-event-kind">
+              ${event.type==='training'?'TRAINING':'SPIEL'}
+            </div>
+            <div class="viewer-event-title">${viewerEventTitle(event)}</div>
+            <div class="viewer-event-meta">
+              ${fmtDateLong(event.date)} · ${event.time||'Zeit offen'}
+            </div>
+          </div>
+        </div>
+      `).join('')
+    : `
+      <div class="viewer-empty">
+        In diesem Monat sind keine ${viewerType==='training'?'Trainings':'Spiele'} eingetragen.
+      </div>
+    `;
+
+  root.innerHTML=`
+    <style>
+      #viewerPortalApp{
+        position:fixed;
+        inset:0;
+        z-index:9000;
+        overflow:auto;
+        background:
+          radial-gradient(circle at 0% 0%,rgba(36,87,68,.12),transparent 28%),
+          linear-gradient(180deg,#eef5f2 0%,#f8fbf9 100%);
+        color:#24322d;
+        font-family:inherit;
+      }
+      #viewerPortalApp *{box-sizing:border-box}
+      .viewer-shell{
+        width:min(100%,980px);
+        margin:0 auto;
+        padding:24px 18px 40px;
+      }
+      .viewer-header{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        gap:18px;
+        margin-bottom:18px;
+      }
+      .viewer-brand{
+        display:flex;
+        gap:14px;
+        align-items:center;
+      }
+      .viewer-logo{
+        width:58px;
+        height:58px;
+        object-fit:contain;
+        border-radius:16px;
+        background:#fff;
+        border:1px solid #d5e1dc;
+        padding:5px;
+      }
+      .viewer-kicker{
+        font-size:12px;
+        font-weight:900;
+        letter-spacing:.08em;
+        color:#4d7464;
+      }
+      .viewer-title{
+        margin:2px 0 0;
+        color:#173f32;
+        font-size:26px;
+      }
+      .viewer-subtitle{
+        margin-top:4px;
+        color:#68766f;
+      }
+      .viewer-logout{
+        border:1px solid #cad9d2;
+        background:#fff;
+        color:#173f32;
+        border-radius:12px;
+        padding:10px 14px;
+        font-weight:800;
+        cursor:pointer;
+      }
+      .viewer-note{
+        background:#e7f2ed;
+        border:1px solid #c7ddd2;
+        color:#285342;
+        border-radius:14px;
+        padding:11px 14px;
+        margin-bottom:16px;
+        font-size:14px;
+      }
+      .viewer-toolbar{
+        background:#fff;
+        border:1px solid #d8e3de;
+        border-radius:18px;
+        padding:12px;
+        display:grid;
+        gap:12px;
+        box-shadow:0 12px 30px rgba(23,63,50,.06);
+        margin-bottom:14px;
+      }
+      .viewer-tabs{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:8px;
+      }
+      .viewer-tab{
+        border:1px solid #d3dfd9;
+        background:#f7faf8;
+        color:#315044;
+        border-radius:12px;
+        min-height:44px;
+        font-weight:900;
+        cursor:pointer;
+      }
+      .viewer-tab.active{
+        background:#173f32;
+        border-color:#173f32;
+        color:#fff;
+      }
+      .viewer-month-row{
+        display:grid;
+        grid-template-columns:46px 1fr 46px;
+        gap:8px;
+        align-items:center;
+      }
+      .viewer-month-btn{
+        border:1px solid #d3dfd9;
+        background:#fff;
+        border-radius:10px;
+        min-height:42px;
+        font-size:19px;
+        cursor:pointer;
+      }
+      .viewer-month-select{
+        width:100%;
+        min-height:42px;
+        border:1px solid #d3dfd9;
+        border-radius:10px;
+        padding:8px 10px;
+        background:#fff;
+        color:#263a31;
+        font-weight:800;
+      }
+      .viewer-list{
+        display:grid;
+        gap:10px;
+      }
+      .viewer-event-card{
+        display:flex;
+        align-items:center;
+        gap:14px;
+        background:#fff;
+        border:1px solid #d8e3de;
+        border-radius:16px;
+        padding:14px;
+        box-shadow:0 8px 22px rgba(23,63,50,.05);
+      }
+      .viewer-date-box{
+        width:62px;
+        min-width:62px;
+        text-align:center;
+        border-radius:13px;
+        background:#edf5f1;
+        color:#173f32;
+        padding:7px 5px;
+      }
+      .viewer-weekday{
+        text-transform:uppercase;
+        font-size:11px;
+        font-weight:900;
+      }
+      .viewer-day{
+        font-size:27px;
+        line-height:1;
+        font-weight:900;
+        margin-top:3px;
+      }
+      .viewer-event-kind{
+        font-size:10px;
+        font-weight:900;
+        letter-spacing:.08em;
+        color:#56806e;
+      }
+      .viewer-event-title{
+        font-size:17px;
+        font-weight:900;
+        color:#243a31;
+        margin-top:2px;
+      }
+      .viewer-event-meta{
+        color:#728078;
+        font-size:13px;
+        margin-top:4px;
+      }
+      .viewer-empty{
+        background:#fff;
+        border:1px dashed #cbdad3;
+        border-radius:16px;
+        padding:26px;
+        text-align:center;
+        color:#758078;
+      }
+      @media(max-width:650px){
+        .viewer-shell{padding:16px 12px 30px}
+        .viewer-header{align-items:center}
+        .viewer-title{font-size:21px}
+        .viewer-subtitle{font-size:13px}
+        .viewer-logo{width:48px;height:48px}
+        .viewer-event-card{padding:12px}
+      }
+    </style>
+
+    <div class="viewer-shell">
+      <div class="viewer-header">
+        <div class="viewer-brand">
+          <img
+            class="viewer-logo"
+            src="${team.settings?.logo||SC_ALTSTADT_LOGO||defaultLogoData('2')}"
+            alt="SC Altstadt">
+          <div>
+            <div class="viewer-kicker">SC ALTSTADT · LESEZUGANG</div>
+            <h1 class="viewer-title">${team.settings?.teamName||TEAM_NAMES[viewer.teamKey]}</h1>
+            <div class="viewer-subtitle">
+              Angemeldet als ${viewer.name||cloudUser?.email||''}
+            </div>
+          </div>
+        </div>
+
+        <button class="viewer-logout" onclick="cloudSignOut()">Abmelden</button>
+      </div>
+
+      <div class="viewer-note">
+        👁️ Dieser Zugang ist nur zum Anschauen. Änderungen sind nicht möglich.
+      </div>
+
+      <div class="viewer-toolbar">
+        <div class="viewer-tabs">
+          <button
+            class="viewer-tab ${viewerType==='training'?'active':''}"
+            onclick="setViewerType('training')">
+            🏒 Trainings
+          </button>
+          <button
+            class="viewer-tab ${viewerType==='game'?'active':''}"
+            onclick="setViewerType('game')">
+            🥅 Spiele
+          </button>
+        </div>
+
+        <div class="viewer-month-row">
+          <button class="viewer-month-btn" onclick="shiftViewerMonth(-1)">‹</button>
+
+          <select
+            class="viewer-month-select"
+            onchange="setViewerMonth(this.value)">
+            ${
+              months.length
+                ? months.map(month=>`
+                    <option value="${month}" ${month===viewerMonth?'selected':''}>
+                      ${viewerMonthLabel(month)}
+                    </option>
+                  `).join('')
+                : `<option value="${viewerMonth}">${viewerMonthLabel(viewerMonth)}</option>`
+            }
+          </select>
+
+          <button class="viewer-month-btn" onclick="shiftViewerMonth(1)">›</button>
+        </div>
+      </div>
+
+      <div class="viewer-list">${cards}</div>
+    </div>
+  `;
+}
+
+async function loadViewerPortal(){
+  const viewer=currentViewerAccount();
+  if(!viewer)return;
+
+  const {data:row,error}=await cloudClient
+    .from('club_state')
+    .select('data,updated_at')
+    .eq('club_id',SHARED_CLUB_ID)
+    .maybeSingle();
+
+  if(error){
+    console.error('Viewer-Daten konnten nicht geladen werden',error);
+    return;
+  }
+
+  if(row?.data){
+    if(row.data.teams){
+      cloudRoot=row.data;
+    }else{
+      cloudRoot={
+        teams:{
+          second:normalizeTeamData(row.data),
+          third:{players:[],events:[],attendance:{},lineups:{},boards:{},settings:{}}
+        }
+      };
+    }
+  }
+
+  document.getElementById('authScreen')?.classList.add('hidden');
+  document.getElementById('coachModeApp')?.classList.add('hidden');
+  document.getElementById('playerPilotApp')?.classList.add('hidden');
+  document.getElementById('teamScreen')?.classList.add('hidden');
+
+  const teamSwitchBtn=document.getElementById('teamSwitchBtn');
+  const settingsBtn=document.getElementById('settingsBtn');
+
+  if(teamSwitchBtn)teamSwitchBtn.style.display='none';
+  if(settingsBtn)settingsBtn.style.display='none';
+
+  let root=document.getElementById('viewerPortalApp');
+  if(!root){
+    root=document.createElement('div');
+    root.id='viewerPortalApp';
+    document.body.appendChild(root);
+  }
+
+  renderViewerPortal(root);
+
+  clearInterval(viewerPollTimer);
+  viewerPollTimer=setInterval(loadViewerPortal,30000);
 }
 
 
@@ -6377,6 +6852,7 @@ async function handleCloudSession(session){
   const authScreen=document.getElementById('authScreen');
   const logoutBtn=document.getElementById('logoutBtn');
   if(!cloudUser){
+    hideViewerPortal();
     cloudReady=false;
     authScreen.classList.remove('hidden');
     logoutBtn.style.display='none';
@@ -6399,8 +6875,24 @@ async function handleCloudSession(session){
   }
 
   hidePasswordSetup();
+  hideViewerPortal();
 
-  currentPlayerProfile=await getCurrentPlayerProfile();
+  // Reiner Lesezugang für Staff/Verantwortliche.
+  if(currentViewerAccount()){
+    currentPlayerProfile=null;
+    cloudReady=false;
+    clearInterval(cloudPollTimer);
+    await loadViewerPortal();
+    cloudReady=true;
+    setCloudStatus('Nur Lesezugriff','ok');
+    return;
+  }
+
+  // Ein ausdrücklich eingetragener Admin erhält immer den Coach-Zugang,
+  // auch wenn dieselbe E-Mail zusätzlich als Spielerprofil existiert.
+  currentPlayerProfile=isAdminAccount()
+    ? null
+    : await getCurrentPlayerProfile();
 
   if(currentPlayerProfile){
     await loadPlayerPortal();
