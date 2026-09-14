@@ -72,7 +72,7 @@ const ADMIN_EMAILS=new Set([
 ]);
 
 const VIEWER_ACCOUNTS={
-  'reto.waldmeier@olten.ch':{
+  'reto.waldmeier@ehco.ch':{
     name:'Reto Waldmeier',
     teamKey:'second'
   },
