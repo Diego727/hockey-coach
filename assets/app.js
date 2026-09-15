@@ -5586,6 +5586,7 @@ function playerPortalStatusPresentation(status){
 
 let playerPortalType='training';
 let playerPortalMonth=new Date().toISOString().slice(0,7);
+let playerPortalCalendarScrollLeft=0;
 
 
 
@@ -6246,7 +6247,7 @@ function renderPlayerPortalCalendar(){
       <div>So</div>
     </div>
 
-    <div style="
+    <div id="playerPortalCalendarScroller" style="
       display:grid;
       grid-template-columns:repeat(7,minmax(0,1fr));
       gap:5px;
@@ -6261,6 +6262,15 @@ function renderPlayerPortalCalendar(){
       </p>
     `}
   `;
+
+  // Mobile: horizontale Kalenderposition auch bei der 5-Sekunden-Aktualisierung behalten.
+  const calendarScroller=document.getElementById('playerPortalCalendarScroller');
+  if(calendarScroller){
+    calendarScroller.scrollLeft=playerPortalCalendarScrollLeft;
+    calendarScroller.addEventListener('scroll',()=>{
+      playerPortalCalendarScrollLeft=calendarScroller.scrollLeft;
+    },{passive:true});
+  }
 }
 
 function openPlayerPortalEvent(eventId){
