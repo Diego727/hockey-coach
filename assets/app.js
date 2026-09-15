@@ -684,44 +684,42 @@ function generateSeasonTrainings(){
 }
 function closeMobileCoachEventWindow(){
   const card=document.getElementById('selectedCard');
-  if(card)card.classList.remove('mobile-coach-event-window');
-  document.body.classList.remove('mobile-coach-event-open');
+  const originalHost=document.getElementById('selectedPanelHost');
+
+  if(card){
+    card.classList.remove('mobile-coach-event-window');
+    if(originalHost)originalHost.appendChild(card);
+  }
+
+  const detailRoot=document.getElementById('mobileCoachStandaloneRoot');
+  if(detailRoot)detailRoot.remove();
+
+  const coachApp=document.getElementById('coachModeApp');
+  if(coachApp)coachApp.style.display='';
+
+  document.body.classList.remove('mobile-coach-event-open','standalone-coach-event-page');
   document.getElementById('mobileCoachEventClose')?.remove();
 }
-
 function openMobileCoachEventWindow(){
   const card=document.getElementById('selectedCard');
-  if(!card){
-    setTimeout(openMobileCoachEventWindow,80);
-    return;
+  if(!card)return;
+
+  // Den ursprünglichen Platz der Detailkarte merken, damit "Zurück" sauber funktioniert.
+  const originalParent=card.parentElement;
+  if(originalParent && originalParent.id!=='mobileCoachStandaloneRoot' && !document.getElementById('selectedPanelHost')){
+    originalParent.id='selectedPanelHost';
   }
 
-  document.body.classList.add('mobile-coach-event-open');
-
-  // Auf der separaten mobilen Detailseite wird die Terminkarte aus der normalen
-  // Coach-Ansicht herausgenommen und in eine eigene, viewport-breite Seite gesetzt.
-  // Dadurch bleiben Terminliste, Schnellplanung usw. garantiert unsichtbar.
-  if(isStandaloneCoachEventView()){
-    document.body.classList.add('standalone-coach-event-page');
-
-    let detailRoot=document.getElementById('mobileCoachStandaloneRoot');
-    if(!detailRoot){
-      detailRoot=document.createElement('main');
-      detailRoot.id='mobileCoachStandaloneRoot';
-      detailRoot.className='mobile-coach-standalone-root';
-      document.body.appendChild(detailRoot);
-    }
-    if(card.parentElement!==detailRoot){
-      detailRoot.appendChild(card);
-    }
-
-    // Erst jetzt die normale Coach-Oberfläche verstecken. Die Detailkarte liegt
-    // bereits ausserhalb davon und bleibt deshalb sicher sichtbar.
-    const coachApp=document.getElementById('coachModeApp');
-    if(coachApp)coachApp.style.display='none';
-    detailRoot.style.display='block';
+  let detailRoot=document.getElementById('mobileCoachStandaloneRoot');
+  if(!detailRoot){
+    detailRoot=document.createElement('main');
+    detailRoot.id='mobileCoachStandaloneRoot';
+    detailRoot.className='mobile-coach-standalone-root';
+    document.body.appendChild(detailRoot);
   }
 
+  detailRoot.appendChild(card);
+  document.body.classList.add('mobile-coach-event-open','standalone-coach-event-page');
   card.classList.add('mobile-coach-event-window');
 
   let closeButton=document.getElementById('mobileCoachEventClose');
@@ -730,31 +728,15 @@ function openMobileCoachEventWindow(){
     closeButton.id='mobileCoachEventClose';
     closeButton.type='button';
     closeButton.className='mobile-coach-event-close';
-    closeButton.setAttribute('aria-label','Gesamtübersicht schliessen');
     closeButton.innerHTML='← Zurück';
-    closeButton.onclick=()=>{
-      if(isStandaloneCoachEventView()){
-        if(window.history.length>1)window.history.back();
-        else{
-          const url=new URL(window.location.href);
-          url.searchParams.delete('coach_event_view');
-          url.searchParams.delete('coach_event_id');
-          url.searchParams.delete('coach_team');
-          window.location.assign(url.toString());
-        }
-      }else{
-        closeMobileCoachEventWindow();
-      }
-    };
+    closeButton.onclick=closeMobileCoachEventWindow;
     card.prepend(closeButton);
   }
 
   window.scrollTo(0,0);
-  card.scrollTop=0;
+  detailRoot.scrollTop=0;
 }
-function isStandaloneCoachEventView(){
-  return new URLSearchParams(window.location.search).get('coach_event_view')==='1';
-}
+function isStandaloneCoachEventView(){ return false; }
 
 function coachEventDetailUrl(id){
   const url=new URL(window.location.href);
@@ -766,17 +748,14 @@ function coachEventDetailUrl(id){
 }
 
 function openCoachEventInNewWindow(id){
-  // Mobile: bewusst auf eine eigene Detail-SEITE wechseln. Das ist zuverlässiger
-  // als window.open(), das auf iPhone/Android je nach Browser blockiert werden kann.
-  window.location.assign(coachEventDetailUrl(id));
+  // Kein Seiten-Reload mehr: auf Mobilgeräten wird eine echte, isolierte
+  // Detailansicht innerhalb der bereits authentifizierten App geöffnet.
+  selectedId=id;
+  renderAll();
+  requestAnimationFrame(()=>requestAnimationFrame(openMobileCoachEventWindow));
 }
 
 function selectEvent(id){
-  if(window.matchMedia('(max-width: 800px)').matches&&!isStandaloneCoachEventView()){
-    openCoachEventInNewWindow(id);
-    return;
-  }
-
   selectedId=id;
   renderAll();
 
@@ -789,7 +768,7 @@ function selectEvent(id){
     card.classList.add('training-selected-flash');
 
     if(window.matchMedia('(max-width: 800px)').matches){
-      openMobileCoachEventWindow();
+      requestAnimationFrame(openMobileCoachEventWindow);
     }else{
       closeMobileCoachEventWindow();
       const search=document.getElementById('attendanceSearch');
@@ -7608,7 +7587,7 @@ function ensureMobileCoachTheme(){
     }
 
     @media(max-width:800px){
-      body.standalone-coach-event-page #selectedCard.mobile-coach-event-window{
+      body #mobileCoachStandaloneRoot #selectedCard.mobile-coach-event-window{
         inset:0 !important;
         width:100vw !important;
         height:100dvh !important;
@@ -7761,7 +7740,7 @@ function initializeBirthdayInput(){
         background:#fff !important;
       }
 
-      body.standalone-coach-event-page #mobileCoachStandaloneRoot{
+      body #mobileCoachStandaloneRoot{
         display:block !important;
         position:fixed !important;
         inset:0 !important;
@@ -7776,7 +7755,7 @@ function initializeBirthdayInput(){
         -webkit-overflow-scrolling:touch;
       }
 
-      body.standalone-coach-event-page #selectedCard.mobile-coach-event-window{
+      body #mobileCoachStandaloneRoot #selectedCard.mobile-coach-event-window{
         position:relative !important;
         inset:auto !important;
         width:100% !important;
