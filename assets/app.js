@@ -2500,7 +2500,11 @@ function renderCoachCalendar(){
     ].join('-');
 
     const entries=(eventMap[date]||[]).map(event=>`
-      <div class="coach-calendar-entry ${event.type==='game'?'game':''}">
+      <div class="coach-calendar-entry ${event.type==='game'?'game':''}"
+           role="button" tabindex="0"
+           onclick="openCoachEventFromCalendar('${event.id}')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCoachEventFromCalendar('${event.id}')}"
+           style="cursor:pointer">
         <div>${event.time||''}</div>
         <div>
           ${event.type==='game'
@@ -2526,6 +2530,13 @@ function renderCoachCalendar(){
       ${cells.join('')}
     </div>
   `;
+}
+
+function openCoachEventFromCalendar(id){
+  const event=data.events.find(item=>item.id===id);
+  if(!event)return;
+  currentType=event.type==='game'?'game':'training';
+  selectEvent(id);
 }
 
 function downloadCoachCalendarPdf(){
@@ -7143,7 +7154,10 @@ async function handleCloudSession(session){
     setTimeout(()=>{
       if(data.events?.some(event=>event.id===requestedEventId)){
         selectedId=requestedEventId;
+        const requestedEvent=data.events.find(event=>event.id===requestedEventId);
+        if(requestedEvent)currentType=requestedEvent.type==='game'?'game':'training';
         renderAll();
+        document.body.classList.add('standalone-coach-event-page');
         requestAnimationFrame(openMobileCoachEventWindow);
       }
     },0);
@@ -7566,6 +7580,16 @@ function ensureMobileCoachTheme(){
     }
 
     @media(max-width:800px){
+      body.standalone-coach-event-page #selectedCard.mobile-coach-event-window{
+        inset:0 !important;
+        width:100vw !important;
+        height:100dvh !important;
+        max-width:none !important;
+        max-height:none !important;
+        margin:0 !important;
+        border-radius:0 !important;
+      }
+
       body.mobile-coach-event-open{
         overflow:hidden !important;
       }
