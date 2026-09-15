@@ -4275,24 +4275,73 @@ function renderViewerPortal(root){
   );
 
   const cards=filtered.length
-    ? filtered.map(event=>`
-        <div class="viewer-event-card">
-          <div class="viewer-date-box">
-            <div class="viewer-weekday">${viewerWeekdayShort(event.date)}</div>
-            <div class="viewer-day">${viewerDayNumber(event.date)}</div>
-          </div>
+    ? filtered.map(event=>{
+        const attendance=team.attendance?.[event.id]||{};
+        const players=[...(team.players||[])].sort((a,b)=>
+          String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'})
+        );
 
-          <div class="viewer-event-main">
-            <div class="viewer-event-kind">
-              ${event.type==='training'?'TRAINING':'SPIEL'}
+        const present=players.filter(player=>
+          (attendance[player.id]||'present')==='present'
+        );
+        const absent=players.filter(player=>
+          attendance[player.id]==='absent'
+        );
+        const unknown=players.filter(player=>{
+          const status=attendance[player.id];
+          return status==='unknown'||status==='open';
+        });
+
+        const names=list=>list.length
+          ? list.map(player=>`<span class="viewer-player-chip">${player.name||'Unbekannt'}</span>`).join('')
+          : `<span class="viewer-none">Niemand</span>`;
+
+        return `
+          <div class="viewer-event-card">
+            <div class="viewer-event-top">
+              <div class="viewer-date-box">
+                <div class="viewer-weekday">${viewerWeekdayShort(event.date)}</div>
+                <div class="viewer-day">${viewerDayNumber(event.date)}</div>
+              </div>
+
+              <div class="viewer-event-main">
+                <div class="viewer-event-kind">
+                  ${event.type==='training'?'TRAINING':'SPIEL'}
+                </div>
+                <div class="viewer-event-title">${viewerEventTitle(event)}</div>
+                <div class="viewer-event-meta">
+                  ${fmtDateLong(event.date)} · ${event.time||'Zeit offen'}
+                </div>
+              </div>
             </div>
-            <div class="viewer-event-title">${viewerEventTitle(event)}</div>
-            <div class="viewer-event-meta">
-              ${fmtDateLong(event.date)} · ${event.time||'Zeit offen'}
+
+            <div class="viewer-attendance-summary">
+              <span class="viewer-count viewer-count-present">✓ Dabei: ${present.length}</span>
+              <span class="viewer-count viewer-count-absent">✕ Abwesend: ${absent.length}</span>
+              ${unknown.length?`<span class="viewer-count viewer-count-open">? Offen: ${unknown.length}</span>`:''}
+            </div>
+
+            <div class="viewer-attendance-groups">
+              <div class="viewer-attendance-group">
+                <div class="viewer-attendance-heading">✓ Dabei</div>
+                <div class="viewer-player-list">${names(present)}</div>
+              </div>
+
+              <div class="viewer-attendance-group">
+                <div class="viewer-attendance-heading">✕ Abwesend</div>
+                <div class="viewer-player-list">${names(absent)}</div>
+              </div>
+
+              ${unknown.length?`
+                <div class="viewer-attendance-group">
+                  <div class="viewer-attendance-heading">? Noch offen</div>
+                  <div class="viewer-player-list">${names(unknown)}</div>
+                </div>
+              `:''}
             </div>
           </div>
-        </div>
-      `).join('')
+        `;
+      }).join('')
     : `
       <div class="viewer-empty">
         In diesem Monat sind keine ${viewerType==='training'?'Trainings':'Spiele'} eingetragen.
@@ -4430,14 +4479,17 @@ function renderViewerPortal(root){
         gap:10px;
       }
       .viewer-event-card{
-        display:flex;
-        align-items:center;
-        gap:14px;
+        display:block;
         background:#fff;
         border:1px solid #d8e3de;
         border-radius:16px;
         padding:14px;
         box-shadow:0 8px 22px rgba(23,63,50,.05);
+      }
+      .viewer-event-top{
+        display:flex;
+        align-items:center;
+        gap:14px;
       }
       .viewer-date-box{
         width:62px;
@@ -4475,6 +4527,68 @@ function renderViewerPortal(root){
         color:#728078;
         font-size:13px;
         margin-top:4px;
+      }
+      .viewer-attendance-summary{
+        display:flex;
+        flex-wrap:wrap;
+        gap:8px;
+        margin-top:13px;
+        padding-top:12px;
+        border-top:1px solid #edf2ef;
+      }
+      .viewer-count{
+        border-radius:999px;
+        padding:6px 9px;
+        font-size:12px;
+        font-weight:900;
+      }
+      .viewer-count-present{
+        background:#e8f5ed;
+        color:#22613f;
+      }
+      .viewer-count-absent{
+        background:#fbeaea;
+        color:#8a3434;
+      }
+      .viewer-count-open{
+        background:#f3f1e6;
+        color:#725f20;
+      }
+      .viewer-attendance-groups{
+        display:grid;
+        gap:10px;
+        margin-top:12px;
+      }
+      .viewer-attendance-group{
+        background:#f8faf9;
+        border:1px solid #e3ebe7;
+        border-radius:12px;
+        padding:10px;
+      }
+      .viewer-attendance-heading{
+        font-size:12px;
+        font-weight:900;
+        color:#40584e;
+        margin-bottom:7px;
+      }
+      .viewer-player-list{
+        display:flex;
+        flex-wrap:wrap;
+        gap:6px;
+      }
+      .viewer-player-chip{
+        display:inline-block;
+        background:#fff;
+        border:1px solid #d9e4df;
+        border-radius:999px;
+        padding:5px 8px;
+        font-size:12px;
+        font-weight:800;
+        color:#2f433a;
+      }
+      .viewer-none{
+        color:#8a958f;
+        font-size:12px;
       }
       .viewer-empty{
         background:#fff;
