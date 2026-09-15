@@ -711,7 +711,31 @@ function openMobileCoachEventWindow(){
   card.scrollTop=0;
 }
 
+function isStandaloneCoachEventView(){
+  return new URLSearchParams(window.location.search).get('coach_event_view')==='1';
+}
+
+function openCoachEventInNewWindow(id){
+  const url=new URL(window.location.href);
+  url.searchParams.set('coach_event_view','1');
+  url.searchParams.set('coach_event_id',id);
+  if(activeTeamKey)url.searchParams.set('coach_team',activeTeamKey);
+  url.hash='';
+  const opened=window.open(url.toString(),'_blank');
+  if(!opened){
+    // Falls der Browser Pop-ups blockiert, wenigstens die bestehende mobile Vollansicht öffnen.
+    selectedId=id;
+    renderAll();
+    requestAnimationFrame(openMobileCoachEventWindow);
+  }
+}
+
 function selectEvent(id){
+  if(window.matchMedia('(max-width: 800px)').matches&&!isStandaloneCoachEventView()){
+    openCoachEventInNewWindow(id);
+    return;
+  }
+
   selectedId=id;
   renderAll();
 
@@ -7074,8 +7098,29 @@ async function handleCloudSession(session){
   startCloudPolling();
   const remembered=localStorage.getItem('hockeyCoachActiveTeam');
   refreshTeamLogos();
-  if(remembered&&cloudRoot.teams?.[remembered])selectTeam(remembered);
-  else document.getElementById('teamScreen').classList.remove('hidden');
+
+  const coachEventParams=new URLSearchParams(window.location.search);
+  const requestedTeam=coachEventParams.get('coach_team');
+  const requestedEventId=coachEventParams.get('coach_event_id');
+  const standaloneCoachEvent=coachEventParams.get('coach_event_view')==='1';
+
+  if(standaloneCoachEvent&&requestedTeam&&cloudRoot.teams?.[requestedTeam]){
+    selectTeam(requestedTeam);
+  }else if(remembered&&cloudRoot.teams?.[remembered]){
+    selectTeam(remembered);
+  }else{
+    document.getElementById('teamScreen').classList.remove('hidden');
+  }
+
+  if(standaloneCoachEvent&&requestedEventId&&activeTeamKey){
+    setTimeout(()=>{
+      if(data.events?.some(event=>event.id===requestedEventId)){
+        selectedId=requestedEventId;
+        renderAll();
+        requestAnimationFrame(openMobileCoachEventWindow);
+      }
+    },0);
+  }
 }
 async function initCloud(){
   let initialSession=null;
