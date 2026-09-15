@@ -682,6 +682,35 @@ function generateSeasonTrainings(){
    : 'Alle Saisontrainings sind bereits vorhanden.'
  );
 }
+function closeMobileCoachEventWindow(){
+  const card=document.getElementById('selectedCard');
+  if(card)card.classList.remove('mobile-coach-event-window');
+  document.body.classList.remove('mobile-coach-event-open');
+  document.getElementById('mobileCoachEventClose')?.remove();
+}
+
+function openMobileCoachEventWindow(){
+  const card=document.getElementById('selectedCard');
+  if(!card)return;
+
+  card.classList.add('mobile-coach-event-window');
+  document.body.classList.add('mobile-coach-event-open');
+
+  let closeButton=document.getElementById('mobileCoachEventClose');
+  if(!closeButton){
+    closeButton=document.createElement('button');
+    closeButton.id='mobileCoachEventClose';
+    closeButton.type='button';
+    closeButton.className='mobile-coach-event-close';
+    closeButton.setAttribute('aria-label','Gesamtübersicht schliessen');
+    closeButton.innerHTML='← Zurück';
+    closeButton.onclick=closeMobileCoachEventWindow;
+    card.prepend(closeButton);
+  }
+
+  card.scrollTop=0;
+}
+
 function selectEvent(id){
   selectedId=id;
   renderAll();
@@ -695,8 +724,9 @@ function selectEvent(id){
     card.classList.add('training-selected-flash');
 
     if(window.matchMedia('(max-width: 800px)').matches){
-      card.scrollIntoView({behavior:'smooth',block:'start'});
+      openMobileCoachEventWindow();
     }else{
+      closeMobileCoachEventWindow();
       const search=document.getElementById('attendanceSearch');
       if(search)search.focus({preventScroll:true});
     }
@@ -7460,6 +7490,54 @@ function ensureMobileCoachTheme(){
 
       #lineupBoard .lineup-slot .remove{
         min-height:34px !important;
+      }
+    }
+
+    @media(max-width:800px){
+      body.mobile-coach-event-open{
+        overflow:hidden !important;
+      }
+
+      #selectedCard.mobile-coach-event-window{
+        position:fixed !important;
+        inset:0 !important;
+        z-index:100000 !important;
+        width:100vw !important;
+        max-width:none !important;
+        height:100dvh !important;
+        max-height:100dvh !important;
+        margin:0 !important;
+        padding:14px 12px 32px !important;
+        border-radius:0 !important;
+        overflow-y:auto !important;
+        overflow-x:hidden !important;
+        background:#fff !important;
+        -webkit-overflow-scrolling:touch;
+        box-sizing:border-box !important;
+      }
+
+      #selectedCard.mobile-coach-event-window .mobile-coach-event-close{
+        position:sticky !important;
+        top:0 !important;
+        z-index:100010 !important;
+        display:block !important;
+        width:100% !important;
+        min-height:48px !important;
+        margin:0 0 12px !important;
+        border:0 !important;
+        border-radius:12px !important;
+        background:#173f32 !important;
+        color:#fff !important;
+        font-size:16px !important;
+        font-weight:800 !important;
+        text-align:left !important;
+        padding:0 16px !important;
+        box-shadow:0 4px 14px rgba(0,0,0,.14) !important;
+      }
+
+      #selectedCard.mobile-coach-event-window #selectedBody{
+        width:100% !important;
+        min-width:0 !important;
       }
     }
 
