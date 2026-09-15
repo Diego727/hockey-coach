@@ -1341,7 +1341,7 @@ function exportMonthLabel(month){
 
 function attendanceListEvents(){
   return (data.events||[])
-    .filter(event=>['training','game'].includes(event.type)&&event.date)
+    .filter(event=>['training','game'].includes(viewerEventType(event))&&event.date)
     .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
 }
 
@@ -4234,8 +4234,22 @@ function hideViewerPortal(){
   document.getElementById('viewerPortalApp')?.remove();
 }
 
+function viewerEventType(event){
+  const raw=String(event?.type||'').trim().toLowerCase();
+  if(['game','spiel','match'].includes(raw))return 'game';
+  if(['training','practice','train'].includes(raw))return 'training';
+
+  const id=String(event?.id||'').toLowerCase();
+  if(id.startsWith('game_')||id.startsWith('spiel_')||id.startsWith('match_'))return 'game';
+  if(id.startsWith('training_')||id.startsWith('practice_'))return 'training';
+
+  // Ältere Spieltermine erkennen, falls der Typ in alten Daten fehlt.
+  if(event?.opponent||event?.homeAway==='home'||event?.homeAway==='away')return 'game';
+  return raw;
+}
+
 function viewerEventTitle(event){
-  if(event.type==='game'){
+  if(viewerEventType(event)==='game'){
     const opponent=event.opponent||event.title||'Gegner offen';
     const homeAway=event.homeAway==='home'
       ? 'Heim'
@@ -4250,7 +4264,7 @@ function viewerEventTitle(event){
 function viewerMonths(events,type){
   return [...new Set(
     (events||[])
-      .filter(event=>event.type===type&&event.date)
+      .filter(event=>viewerEventType(event)===type&&event.date)
       .map(event=>event.date.slice(0,7))
   )].sort();
 }
@@ -4325,7 +4339,7 @@ function renderViewerPortal(root){
 
   const months=viewerMonths(events,viewerType);
   const filtered=events.filter(event=>
-    event.type===viewerType&&event.date.startsWith(viewerMonth)
+    viewerEventType(event)===viewerType&&event.date.startsWith(viewerMonth)
   );
 
   const cards=filtered.length
@@ -4363,7 +4377,7 @@ function renderViewerPortal(root){
 
               <div class="viewer-event-main">
                 <div class="viewer-event-kind">
-                  ${event.type==='training'?'TRAINING':'SPIEL'}
+                  ${viewerEventType(event)==='training'?'TRAINING':'SPIEL'}
                 </div>
                 <div class="viewer-event-title">${viewerEventTitle(event)}</div>
                 <div class="viewer-event-meta">
