@@ -682,8 +682,13 @@ function generateSeasonTrainings(){
    : 'Alle Saisontrainings sind bereits vorhanden.'
  );
 }
+function getCoachSelectedCard(){
+  const card=document.getElementById('selectedCard')||document.querySelector('#eventsTab .selected-card');
+  if(card&&!card.id)card.id='selectedCard';
+  return card;
+}
 function closeMobileCoachEventWindow(){
-  const card=document.getElementById('selectedCard');
+  const card=getCoachSelectedCard();
   const originalHost=document.getElementById('selectedPanelHost');
 
   if(card){
@@ -701,7 +706,7 @@ function closeMobileCoachEventWindow(){
   document.getElementById('mobileCoachEventClose')?.remove();
 }
 function openMobileCoachEventWindow(){
-  const card=document.getElementById('selectedCard');
+  const card=getCoachSelectedCard();
   if(!card)return;
 
   // Den ursprünglichen Platz der Detailkarte merken, damit "Zurück" sauber funktioniert.
@@ -760,7 +765,7 @@ function selectEvent(id){
   renderAll();
 
   requestAnimationFrame(()=>{
-    const card=document.getElementById('selectedCard');
+    const card=getCoachSelectedCard();
     if(!card)return;
 
     card.classList.remove('training-selected-flash');
