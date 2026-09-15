@@ -683,9 +683,15 @@ function generateSeasonTrainings(){
  );
 }
 function getCoachSelectedCard(){
-  const card=document.getElementById('selectedCard')||document.querySelector('#eventsTab .selected-card');
+  // Die Detailkarte hat im bestehenden index.html keine eigene Klasse/ID.
+  // Deshalb holen wir exakt die Karte, in der selectedTitle/selectedBody liegen.
+  const title=document.getElementById('selectedTitle');
+  const body=document.getElementById('selectedBody');
+  const card=document.getElementById('selectedCard')
+    || title?.closest('.card')
+    || body?.closest('.card');
   if(card&&!card.id)card.id='selectedCard';
-  return card;
+  return card||null;
 }
 function closeMobileCoachEventWindow(){
   const card=getCoachSelectedCard();
