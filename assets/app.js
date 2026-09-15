@@ -704,7 +704,20 @@ function openMobileCoachEventWindow(){
     closeButton.className='mobile-coach-event-close';
     closeButton.setAttribute('aria-label','Gesamtübersicht schliessen');
     closeButton.innerHTML='← Zurück';
-    closeButton.onclick=closeMobileCoachEventWindow;
+    closeButton.onclick=()=>{
+      if(isStandaloneCoachEventView()){
+        if(window.history.length>1)window.history.back();
+        else{
+          const url=new URL(window.location.href);
+          url.searchParams.delete('coach_event_view');
+          url.searchParams.delete('coach_event_id');
+          url.searchParams.delete('coach_team');
+          window.location.assign(url.toString());
+        }
+      }else{
+        closeMobileCoachEventWindow();
+      }
+    };
     card.prepend(closeButton);
   }
 
@@ -715,19 +728,19 @@ function isStandaloneCoachEventView(){
   return new URLSearchParams(window.location.search).get('coach_event_view')==='1';
 }
 
-function openCoachEventInNewWindow(id){
+function coachEventDetailUrl(id){
   const url=new URL(window.location.href);
   url.searchParams.set('coach_event_view','1');
   url.searchParams.set('coach_event_id',id);
   if(activeTeamKey)url.searchParams.set('coach_team',activeTeamKey);
   url.hash='';
-  const opened=window.open(url.toString(),'_blank');
-  if(!opened){
-    // Falls der Browser Pop-ups blockiert, wenigstens die bestehende mobile Vollansicht öffnen.
-    selectedId=id;
-    renderAll();
-    requestAnimationFrame(openMobileCoachEventWindow);
-  }
+  return url.toString();
+}
+
+function openCoachEventInNewWindow(id){
+  // Mobile: bewusst auf eine eigene Detail-SEITE wechseln. Das ist zuverlässiger
+  // als window.open(), das auf iPhone/Android je nach Browser blockiert werden kann.
+  window.location.assign(coachEventDetailUrl(id));
 }
 
 function selectEvent(id){
