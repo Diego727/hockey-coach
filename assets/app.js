@@ -4293,7 +4293,10 @@ function renderViewerPortal(root){
         });
 
         const names=list=>list.length
-          ? list.map(player=>`<span class="viewer-player-chip">${player.name||'Unbekannt'}</span>`).join('')
+          ? list.map(player=>{
+              const pos=positionLabel(player.position)||player.position||'–';
+              return `<span class="viewer-player-chip">${player.name||'Unbekannt'} <span class="viewer-player-position">· ${pos}</span></span>`;
+            }).join('')
           : `<span class="viewer-none">Niemand</span>`;
 
         return `
@@ -4585,6 +4588,10 @@ function renderViewerPortal(root){
         font-size:12px;
         font-weight:800;
         color:#2f433a;
+      }
+      .viewer-player-position{
+        color:#718078;
+        font-weight:700;
       }
       .viewer-none{
         color:#8a958f;
