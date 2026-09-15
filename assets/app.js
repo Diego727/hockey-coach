@@ -691,7 +691,10 @@ function closeMobileCoachEventWindow(){
 
 function openMobileCoachEventWindow(){
   const card=document.getElementById('selectedCard');
-  if(!card)return;
+  if(!card){
+    setTimeout(openMobileCoachEventWindow,80);
+    return;
+  }
 
   document.body.classList.add('mobile-coach-event-open');
 
@@ -711,6 +714,12 @@ function openMobileCoachEventWindow(){
     if(card.parentElement!==detailRoot){
       detailRoot.appendChild(card);
     }
+
+    // Erst jetzt die normale Coach-Oberfläche verstecken. Die Detailkarte liegt
+    // bereits ausserhalb davon und bleibt deshalb sicher sichtbar.
+    const coachApp=document.getElementById('coachModeApp');
+    if(coachApp)coachApp.style.display='none';
+    detailRoot.style.display='block';
   }
 
   card.classList.add('mobile-coach-event-window');
@@ -7750,10 +7759,6 @@ function initializeBirthdayInput(){
         max-width:100vw !important;
         overflow-x:hidden !important;
         background:#fff !important;
-      }
-
-      body.standalone-coach-event-page > *:not(#mobileCoachStandaloneRoot){
-        display:none !important;
       }
 
       body.standalone-coach-event-page #mobileCoachStandaloneRoot{
