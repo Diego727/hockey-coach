@@ -424,13 +424,43 @@ function removeTeamLogo(){
 }
 
 
+function captureCoachViewState(){
+  const pool=document.getElementById('playerPool');
+  const board=document.getElementById('lineupBoard');
+  const details=pool?.closest('details');
+  return {
+    windowX:window.scrollX||0,
+    windowY:window.scrollY||0,
+    poolLeft:pool?.scrollLeft||0,
+    poolTop:pool?.scrollTop||0,
+    boardLeft:board?.scrollLeft||0,
+    boardTop:board?.scrollTop||0,
+    lineupOpen:details?details.open:null
+  };
+}
+function restoreCoachViewState(state){
+  if(!state)return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const pool=document.getElementById('playerPool');
+    const board=document.getElementById('lineupBoard');
+    const details=pool?.closest('details');
+    if(details&&state.lineupOpen!==null)details.open=state.lineupOpen;
+    if(pool){pool.scrollLeft=state.poolLeft;pool.scrollTop=state.poolTop;}
+    if(board){board.scrollLeft=state.boardLeft;board.scrollTop=state.boardTop;}
+    window.scrollTo(state.windowX,state.windowY);
+  }));
+}
 function save(){
+  // Beim Bearbeiten der Aufstellung darf ein Re-Render die aktuelle Position
+  // (z. B. 3./4. Linie oder Special Teams) nicht mehr nach oben zurücksetzen.
+  const coachViewState=captureCoachViewState();
   if(activeTeamKey){
     cloudRoot.teams ||= {};
     cloudRoot.teams[activeTeamKey]=data;
   }
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
   renderAll();
+  restoreCoachViewState(coachViewState);
   scheduleCloudSave();
 }
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
@@ -701,7 +731,6 @@ function closeMobileCoachEventWindow(){
 
 function openMobileCoachEventWindow(){
   if(!window.matchMedia('(max-width: 800px)').matches)return;
-  const wasAlreadyOpen=mobileCoachDetailOpen;
   mobileCoachDetailOpen=true;
   const card=getCoachSelectedCard();
   if(!card)return;
@@ -725,9 +754,7 @@ function openMobileCoachEventWindow(){
     card.insertBefore(closeButton,card.firstChild);
   }
 
-  // Nur beim erstmaligen Öffnen ganz nach oben springen. Bei automatischen
-  // Aktualisierungen / Speichern bleibt die aktuelle Scrollposition erhalten.
-  if(!wasAlreadyOpen)card.scrollTop=0;
+  card.scrollTop=0;
 }
 
 
@@ -2143,12 +2170,6 @@ function ensureLineupPlayerPoolStyles(){
       border-color:#9fc7b5 !important;
     }
 
-    #playerPool .drag-player.touch-selected{
-      outline:3px solid #173f32 !important;
-      outline-offset:2px !important;
-      background:#e2f1ea !important;
-    }
-
     #playerPool .drag-player.used::after{
       content:"Eingesetzt";
       display:inline-block;
@@ -2179,13 +2200,36 @@ function ensureLineupPlayerPoolStyles(){
       font-weight:700;
     }
 
+    /* Spieler bleiben auch bei Linie 3/4 und Special Teams erreichbar. */
+    #playerPool{
+      position:sticky !important;
+      top:8px !important;
+      z-index:80 !important;
+      display:flex !important;
+      flex-wrap:nowrap !important;
+      gap:8px !important;
+      width:100% !important;
+      max-height:none !important;
+      overflow-x:auto !important;
+      overflow-y:hidden !important;
+      -webkit-overflow-scrolling:touch !important;
+      box-shadow:0 8px 18px rgba(23,63,50,.12) !important;
+    }
+    #playerPool .drag-player{
+      flex:0 0 155px !important;
+      margin-bottom:0 !important;
+      text-align:center !important;
+      touch-action:manipulation !important;
+    }
+    #lineupBoard{
+      position:relative !important;
+      overflow:visible !important;
+    }
+
     @media(max-width:900px){
       #playerPool{
-        position:sticky !important;
         top:6px !important;
-        z-index:100 !important;
         max-height:38vh !important;
-        box-shadow:0 8px 18px rgba(0,0,0,.12) !important;
         display:flex !important;
         flex-wrap:nowrap !important;
         gap:8px !important;
@@ -3469,7 +3513,13 @@ function renderLineup(eventId){
 
   board.appendChild(rink);
   activateStickyLineupPlayerPool();
-  requestAnimationFrame(()=>enableTouchLineupSelection(eventId));
+  requestAnimationFrame(()=>{
+    enableTouchLineupSelection(eventId);
+    if(mobileSelectedLineupPlayerId){
+      const selected=pool.querySelector(`[data-player-id="${mobileSelectedLineupPlayerId}"]`);
+      if(selected)selected.classList.add('touch-selected');
+    }
+  });
 }
 function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
@@ -3877,16 +3927,67 @@ function addLineupTable(doc,event,startY){
       y+=lineBoxH+lineGap;
     }
 
+    // Special Teams auf einer eigenen Rapport-Seite ausgeben.
+    doc.addPage();
+    const stPageWidth=doc.internal.pageSize.getWidth();
+    const stMargin=14;
+    const stContentWidth=stPageWidth-(stMargin*2);
+    const hasStLogo=addLogoToPdf(doc,14,7,20,20);
+    const stTitleX=hasStLogo?40:14;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(16);
+    doc.setTextColor(23,63,50);
+    doc.text(`${teamDisplayName()} – Special Teams`,stTitleX,14);
     doc.setFont('helvetica','normal');
-    doc.setFontSize(7);
-    doc.setTextColor(118,128,123);
-    doc.text(
-      'Aufstellung gemäss der für dieses Training gespeicherten Linienzusammenstellung.',
-      margin,
-      pageHeight-10
-    );
+    doc.setFontSize(9);
+    doc.setTextColor(90,102,97);
+    doc.text(`${fmtDateLong(event.date)} · ${event.time}`,stTitleX,20);
 
-    return pageHeight-6;
+    let sty=31;
+    const drawSpecialUnit=(title,slots)=>{
+      const boxH=slots.length===5?49:43;
+      doc.setDrawColor(216,227,222);
+      doc.setFillColor(252,253,253);
+      doc.roundedRect(stMargin,sty,stContentWidth,boxH,3,3,'FD');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(10);
+      doc.setTextColor(23,63,50);
+      doc.text(title,stPageWidth/2,sty+6,{align:'center'});
+      if(slots.length===5){
+        const defW=69, gap=5, defX=(stPageWidth-(defW*2+gap))/2;
+        drawSlot(defX,sty+9,defW,16,slots[0][0],slots[0][1]);
+        drawSlot(defX+defW+gap,sty+9,defW,16,slots[1][0],slots[1][1]);
+        const fwGap=4, fwW=(stContentWidth-12-(fwGap*2))/3, fwX=stMargin+6;
+        drawSlot(fwX,sty+28,fwW,16,slots[2][0],slots[2][1]);
+        drawSlot(fwX+fwW+fwGap,sty+28,fwW,16,slots[3][0],slots[3][1]);
+        drawSlot(fwX+(fwW+fwGap)*2,sty+28,fwW,16,slots[4][0],slots[4][1]);
+      }else{
+        const gap=5, w=(stContentWidth-12-gap)/2, x=stMargin+6;
+        drawSlot(x,sty+9,w,14,slots[0][0],slots[0][1]);
+        drawSlot(x+w+gap,sty+9,w,14,slots[1][0],slots[1][1]);
+        drawSlot(x,sty+25,w,14,slots[2][0],slots[2][1]);
+        drawSlot(x+w+gap,sty+25,w,14,slots[3][0],slots[3][1]);
+      }
+      sty+=boxH+5;
+    };
+
+    for(let unit=1;unit<=2;unit++){
+      const pp=lineup.powerplay[unit];
+      drawSpecialUnit(`Powerplay ${unit}`,[
+        ['Verteidiger links',pp.LD],['Verteidiger rechts',pp.RD],
+        ['Stürmer links',pp.LW],['Center',pp.C],['Stürmer rechts',pp.RW]
+      ]);
+    }
+    for(let unit=1;unit<=3;unit++){
+      const bp=lineup.boxplay[unit];
+      if(sty>245){doc.addPage();sty=20;}
+      drawSpecialUnit(`Boxplay ${unit}`,[
+        ['Stürmer 1',bp.F1],['Stürmer 2',bp.F2],
+        ['Verteidiger 1',bp.D1],['Verteidiger 2',bp.D2]
+      ]);
+    }
+
+    return doc.internal.pageSize.getHeight()-6;
   }
 
   // Spiele / Lager bleiben kompakt als Tabelle.
@@ -7719,32 +7820,7 @@ function enableTouchLineupSelection(eventId){
 }
 
 
-function captureCoachScrollState(){
-  const card=getCoachSelectedCard();
-  const pool=document.getElementById('playerPool');
-  return {
-    windowX:window.scrollX||0,
-    windowY:window.scrollY||0,
-    cardTop:card?.scrollTop||0,
-    cardLeft:card?.scrollLeft||0,
-    poolLeft:pool?.scrollLeft||0
-  };
-}
-
-function restoreCoachScrollState(state){
-  if(!state)return;
-  const card=getCoachSelectedCard();
-  const pool=document.getElementById('playerPool');
-  if(card){
-    card.scrollTop=state.cardTop;
-    card.scrollLeft=state.cardLeft;
-  }
-  if(pool)pool.scrollLeft=state.poolLeft;
-  window.scrollTo(state.windowX,state.windowY);
-}
-
 function renderAll(){
-  const scrollState=captureCoachScrollState();
   setTimeout(()=>activateStickyLineupPlayerPool(),0);
   if(!activeTeamKey)return;
   renderEvents();
@@ -7752,14 +7828,9 @@ function renderAll(){
   renderPlayers();
   renderStats();
   renderQuickPlanner();
-  requestAnimationFrame(()=>{
-    restoreCoachScrollState(scrollState);
-    if(mobileCoachDetailOpen&&window.matchMedia('(max-width: 800px)').matches){
-      openMobileCoachEventWindow();
-      // openMobileCoachEventWindow darf bei Refresh nicht mehr nach oben springen.
-      restoreCoachScrollState(scrollState);
-    }
-  });
+  if(mobileCoachDetailOpen&&window.matchMedia('(max-width: 800px)').matches){
+    requestAnimationFrame(openMobileCoachEventWindow);
+  }
 }
 function initializeBirthdayInput(){
   const input=document.getElementById('playerBirthday');
