@@ -701,6 +701,7 @@ function closeMobileCoachEventWindow(){
 
 function openMobileCoachEventWindow(){
   if(!window.matchMedia('(max-width: 800px)').matches)return;
+  const wasAlreadyOpen=mobileCoachDetailOpen;
   mobileCoachDetailOpen=true;
   const card=getCoachSelectedCard();
   if(!card)return;
@@ -724,7 +725,9 @@ function openMobileCoachEventWindow(){
     card.insertBefore(closeButton,card.firstChild);
   }
 
-  card.scrollTop=0;
+  // Nur beim erstmaligen Öffnen ganz nach oben springen. Bei automatischen
+  // Aktualisierungen / Speichern bleibt die aktuelle Scrollposition erhalten.
+  if(!wasAlreadyOpen)card.scrollTop=0;
 }
 
 
@@ -2140,6 +2143,12 @@ function ensureLineupPlayerPoolStyles(){
       border-color:#9fc7b5 !important;
     }
 
+    #playerPool .drag-player.touch-selected{
+      outline:3px solid #173f32 !important;
+      outline-offset:2px !important;
+      background:#e2f1ea !important;
+    }
+
     #playerPool .drag-player.used::after{
       content:"Eingesetzt";
       display:inline-block;
@@ -2172,8 +2181,11 @@ function ensureLineupPlayerPoolStyles(){
 
     @media(max-width:900px){
       #playerPool{
+        position:sticky !important;
         top:6px !important;
+        z-index:100 !important;
         max-height:38vh !important;
+        box-shadow:0 8px 18px rgba(0,0,0,.12) !important;
         display:flex !important;
         flex-wrap:nowrap !important;
         gap:8px !important;
@@ -7707,7 +7719,32 @@ function enableTouchLineupSelection(eventId){
 }
 
 
+function captureCoachScrollState(){
+  const card=getCoachSelectedCard();
+  const pool=document.getElementById('playerPool');
+  return {
+    windowX:window.scrollX||0,
+    windowY:window.scrollY||0,
+    cardTop:card?.scrollTop||0,
+    cardLeft:card?.scrollLeft||0,
+    poolLeft:pool?.scrollLeft||0
+  };
+}
+
+function restoreCoachScrollState(state){
+  if(!state)return;
+  const card=getCoachSelectedCard();
+  const pool=document.getElementById('playerPool');
+  if(card){
+    card.scrollTop=state.cardTop;
+    card.scrollLeft=state.cardLeft;
+  }
+  if(pool)pool.scrollLeft=state.poolLeft;
+  window.scrollTo(state.windowX,state.windowY);
+}
+
 function renderAll(){
+  const scrollState=captureCoachScrollState();
   setTimeout(()=>activateStickyLineupPlayerPool(),0);
   if(!activeTeamKey)return;
   renderEvents();
@@ -7715,9 +7752,14 @@ function renderAll(){
   renderPlayers();
   renderStats();
   renderQuickPlanner();
-  if(mobileCoachDetailOpen&&window.matchMedia('(max-width: 800px)').matches){
-    requestAnimationFrame(openMobileCoachEventWindow);
-  }
+  requestAnimationFrame(()=>{
+    restoreCoachScrollState(scrollState);
+    if(mobileCoachDetailOpen&&window.matchMedia('(max-width: 800px)').matches){
+      openMobileCoachEventWindow();
+      // openMobileCoachEventWindow darf bei Refresh nicht mehr nach oben springen.
+      restoreCoachScrollState(scrollState);
+    }
+  });
 }
 function initializeBirthdayInput(){
   const input=document.getElementById('playerBirthday');
