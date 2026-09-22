@@ -764,25 +764,16 @@ function openMobileCoachEventWindow(){
 
 
 function selectEvent(id){
+  // Beim Klick auf ein Training/Spiel direkt die separate Aufstellung öffnen.
+  // Dadurch verschwindet die Termin-/Spieleübersicht während der Aufstellungsarbeit
+  // und die gesamte Fläche steht für Linien, PP und BP zur Verfügung.
   if(window.lineupWindowEventId && window.lineupWindowEventId!==id) closeLineupWindow();
   selectedId=id;
   renderAll();
 
   requestAnimationFrame(()=>{
-    const card=getCoachSelectedCard();
-    if(!card)return;
-
-    card.classList.remove('training-selected-flash');
-    void card.offsetWidth;
-    card.classList.add('training-selected-flash');
-
-    if(window.matchMedia('(max-width: 800px)').matches){
-      openMobileCoachEventWindow();
-    }else{
-      closeMobileCoachEventWindow();
-      const search=document.getElementById('attendanceSearch');
-      if(search)search.focus({preventScroll:true});
-    }
+    closeMobileCoachEventWindow();
+    openLineupWindow(id);
   });
 }
 function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(data.manualAttendanceOverrides)delete data.manualAttendanceOverrides[id];if(selectedId===id)selectedId=null;save()}
@@ -2763,11 +2754,6 @@ function renderSelected(){
   <div id="attendanceList" class="attendance-quick-list"></div>
 </div>
 
-<div class="lineup-open-panel">
-  <button class="btn primary lineup-open-button" onclick="openLineupWindow('${e.id}')">🏒 Aufstellung öffnen</button>
-  <span class="muted">Linien, Goalies, Powerplay und Boxplay in einer eigenen grossen Ansicht bearbeiten.</span>
-</div>
-
 <details class="collapse-section">
   <summary>Coachboard</summary>
   <div class="collapse-body">
@@ -3437,7 +3423,7 @@ function openLineupWindow(eventId){
     <div class="lineup-window-shell">
       <div class="lineup-window-header">
         <div>
-          <div class="lineup-window-title">🏒 Aufstellung</div>
+          <div class="lineup-window-title">🏒 Aufstellung – Vollansicht</div>
           <div class="lineup-window-subtitle">${fmtDateLong(e.date)} · ${e.time} · ${subtitle}</div>
         </div>
         <button class="btn soft lineup-window-close" onclick="closeLineupWindow()">✕ Schliessen</button>
