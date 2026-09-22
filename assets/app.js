@@ -3359,6 +3359,7 @@ function ensureLineup(eventId){
     data.lineups[eventId][line] ||= {};
     for(const pos of LINE_POSITIONS) if(!(pos.key in data.lineups[eventId][line])) data.lineups[eventId][line][pos.key]=null;
   }
+  if(!('extraForward' in data.lineups[eventId])) data.lineups[eventId].extraForward=null;
   data.lineups[eventId].powerplay ||= {};
   for(let unit=1;unit<=2;unit++){
     data.lineups[eventId].powerplay[unit] ||= {};
@@ -3447,7 +3448,11 @@ function openLineupWindow(eventId){
           <div class="lineup-window-title">🏒 Aufstellung</div>
           <div class="lineup-window-subtitle">${fmtDateLong(e.date)} · ${e.time} · ${subtitle}</div>
         </div>
-        <button class="btn soft lineup-window-close" onclick="closeLineupWindow()">✕ Schliessen</button>
+        <div class="lineup-window-actions">
+          <button class="btn soft" onclick="downloadLineupRoster('${eventId}')">📋 Aufgebot PDF</button>
+          <button class="btn primary" onclick="downloadLineupOnly('${eventId}')">📄 Aufstellung PDF</button>
+          <button class="btn soft lineup-window-close" onclick="closeLineupWindow()">✕ Schliessen</button>
+        </div>
       </div>
       <div class="lineup-window-body" id="lineupWindowBody">
         <aside class="lineup-window-sidebar">
@@ -3464,6 +3469,68 @@ function openLineupWindow(eventId){
   renderLineup(eventId);
 }
 
+
+function downloadLineupRoster(eventId){
+  const event=data.events.find(x=>x.id===eventId);
+  if(!event)return;
+  ensureLineup(eventId);
+  const lineup=data.lineups[eventId];
+  // Im Aufgebot erscheinen ausschliesslich Spieler, die tatsächlich in der
+  // Aufstellung eingesetzt sind (Goalies + Linie 1–4). PP/PK allein zählt nicht.
+  const lineupPlayerIds=[];
+  for(const g of GOALIE_POSITIONS){
+    const pid=lineup.goalies?.[g.key];
+    if(pid&&!lineupPlayerIds.includes(pid))lineupPlayerIds.push(pid);
+  }
+  for(let line=1;line<=4;line++){
+    for(const pos of LINE_POSITIONS){
+      const pid=lineup[line]?.[pos.key];
+      if(pid&&!lineupPlayerIds.includes(pid))lineupPlayerIds.push(pid);
+    }
+  }
+  if(lineup.extraForward&&!lineupPlayerIds.includes(lineup.extraForward))lineupPlayerIds.push(lineup.extraForward);
+  const players=lineupPlayerIds
+    .map(pid=>data.players.find(p=>p.id===pid))
+    .filter(Boolean);
+  if(!players.length)return alert('In der Aufstellung ist noch kein Spieler eingesetzt.');
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  addPdfHeader(doc,'Aufgebot',event);
+  const opponent=event.type==='game'?`${gameOpponent(event)} · ${gameHomeAwayLabel(event)}`:(event.title||'');
+  let y=event.title?55:49;
+  if(opponent){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text(safePdfText(opponent),14,y);y+=7;
+  }
+  doc.autoTable({
+    startY:y,
+    head:[['Nr.','Spieler','Position','Schuss']],
+    body:players.map(p=>[p.number||p.jerseyNumber||'–',safePdfText(p.name||''),safePdfText(p.position||'–'),safePdfText(p.shot||'–')]),
+    margin:{left:14,right:14},
+    styles:{fontSize:9,cellPadding:2.5},
+    headStyles:{fillColor:[23,63,50]},
+    theme:'grid'
+  });
+  const base=event.type==='game'&&gameOpponent(event)?`Aufgebot_${gameOpponent(event)}`:'Aufgebot';
+  doc.save(`${String(base).replace(/[^a-zA-Z0-9äöüÄÖÜ_-]+/g,'_')}_${event.date}.pdf`);
+}
+
+function downloadLineupOnly(eventId){
+  const event=data.events.find(x=>x.id===eventId);
+  if(!event)return;
+  ensureLineup(eventId);
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  // Die bereits vorhandene grafische Trainings-Aufstellung wird auch für Spiele verwendet.
+  // Sie enthält Goalies, vier Linien sowie Powerplay und Boxplay.
+  const pdfEvent={...event,type:'training'};
+  addLineupTable(doc,pdfEvent,18);
+  // addLineupTable legt für die grafische Ansicht neue Seiten an; leere Startseite entfernen.
+  if(doc.getNumberOfPages()>1)doc.deletePage(1);
+  const base=event.type==='game'&&gameOpponent(event)?`Aufstellung_${gameOpponent(event)}`:'Aufstellung';
+  doc.save(`${String(base).replace(/[^a-zA-Z0-9äöüÄÖÜ_-]+/g,'_')}_${event.date}.pdf`);
+}
+
 (function ensureLineupWindowCss(){
   if(document.getElementById('lineupWindowCss'))return;
   const style=document.createElement('style');
@@ -3477,6 +3544,7 @@ function openLineupWindow(eventId){
     .lineup-window-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;border-bottom:1px solid #dfe8e4;background:#fff;}
     .lineup-window-title{font-size:22px;font-weight:800;color:#173f32;}
     .lineup-window-subtitle{margin-top:3px;color:#687a73;font-size:13px;}
+    .lineup-window-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
     .lineup-window-close{flex:0 0 auto;}
     .lineup-window-body{flex:1 1 0;min-height:0;height:0;display:grid;grid-template-columns:270px minmax(0,1fr);overflow:hidden;}
     .lineup-window-sidebar{height:100%;min-height:0;padding:14px;border-right:1px solid #dfe8e4;background:#f8fbf9;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;}
@@ -3508,6 +3576,7 @@ function renderLineup(eventId){
   const used=new Set();
   for(const g of GOALIE_POSITIONS){const pid=lineup.goalies[g.key];if(pid)used.add(pid)}
   for(let line=1;line<=4;line++) for(const pos of LINE_POSITIONS){const pid=lineup[line][pos.key];if(pid)used.add(pid)}
+  if(lineup.extraForward)used.add(lineup.extraForward);
 
   const pool=document.getElementById('playerPool');
   const board=document.getElementById('lineupBoard');
@@ -3572,6 +3641,20 @@ function renderLineup(eventId){
     row.appendChild(forwards);
     rink.appendChild(row);
   }
+
+  const extraForwardRow=document.createElement('div');
+  extraForwardRow.className='line-row extra-forward-row';
+  extraForwardRow.innerHTML='<h3>13. Stürmer</h3>';
+  const extraForwardWrap=document.createElement('div');
+  extraForwardWrap.className='forward-row';
+  const spacerLeft=document.createElement('div');
+  const spacerRight=document.createElement('div');
+  extraForwardWrap.appendChild(spacerLeft);
+  extraForwardWrap.appendChild(makeSlot(eventId,'extraForward','extraForward','13. Stürmer',lineup.extraForward));
+  extraForwardWrap.appendChild(spacerRight);
+  extraForwardRow.appendChild(extraForwardWrap);
+  rink.appendChild(extraForwardRow);
+
   const specialTitle=document.createElement('h2');
   specialTitle.textContent='Special Teams';
   specialTitle.style.marginTop='28px';
@@ -3622,17 +3705,20 @@ function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
   for(const g of GOALIE_POSITIONS) if(data.lineups[eventId].goalies[g.key]===pid) data.lineups[eventId].goalies[g.key]=null;
   for(let l=1;l<=4;l++) for(const p of LINE_POSITIONS) if(data.lineups[eventId][l][p.key]===pid) data.lineups[eventId][l][p.key]=null;
+  if(data.lineups[eventId].extraForward===pid)data.lineups[eventId].extraForward=null;
 }
 function assignToLineup(eventId,line,pos,pid,isGoalie=false){
   ensureLineup(eventId);
   clearPlayerFromLineup(eventId,pid);
   if(isGoalie) data.lineups[eventId].goalies[pos]=pid;
+  else if(line==='extraForward') data.lineups[eventId].extraForward=pid;
   else data.lineups[eventId][line][pos]=pid;
   save();
 }
 function removeFromLineup(eventId,line,pos,isGoalie=false){
   ensureLineup(eventId);
   if(isGoalie) data.lineups[eventId].goalies[pos]=null;
+  else if(line==='extraForward') data.lineups[eventId].extraForward=null;
   else data.lineups[eventId][line][pos]=null;
   save();
 }
@@ -4023,6 +4109,13 @@ function addLineupTable(doc,event,startY){
 
       y+=lineBoxH+lineGap;
     }
+
+    // 13. Stürmer unter den vier Linien
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.setTextColor(23,63,50);
+    doc.text('13. Stürmer',pageWidth/2,y+4,{align:'center'});
+    drawSlot((pageWidth-70)/2,y+6,70,12,'13. Stürmer',lineup.extraForward);
 
     // Special Teams auf einer eigenen Rapport-Seite ausgeben.
     doc.addPage();
