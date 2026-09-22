@@ -764,16 +764,32 @@ function openMobileCoachEventWindow(){
 
 
 function selectEvent(id){
-  // Termin auswählen und danach DIREKT die grosse Aufstellungsansicht öffnen.
-  // Dadurch ist beim Aufstellungmachen weder die Terminliste links noch die
-  // Anwesenheits-/Detailansicht sichtbar.
   if(window.lineupWindowEventId && window.lineupWindowEventId!==id) closeLineupWindow();
   selectedId=id;
   renderAll();
 
+  // Training/Spiel direkt in der grossen Aufstellungsansicht öffnen.
+  const selectedEvent=data.events.find(x=>x.id===id);
+  if(selectedEvent && (selectedEvent.type==='training' || selectedEvent.type==='game')){
+    requestAnimationFrame(()=>openLineupWindow(id));
+    return;
+  }
+
   requestAnimationFrame(()=>{
-    closeMobileCoachEventWindow();
-    openLineupWindow(id);
+    const card=getCoachSelectedCard();
+    if(!card)return;
+
+    card.classList.remove('training-selected-flash');
+    void card.offsetWidth;
+    card.classList.add('training-selected-flash');
+
+    if(window.matchMedia('(max-width: 800px)').matches){
+      openMobileCoachEventWindow();
+    }else{
+      closeMobileCoachEventWindow();
+      const search=document.getElementById('attendanceSearch');
+      if(search)search.focus({preventScroll:true});
+    }
   });
 }
 function deleteEvent(id){if(!confirm('Termin wirklich löschen?'))return;data.events=data.events.filter(e=>e.id!==id);delete data.attendance[id];delete data.lineups[id];delete data.boards[id];if(data.manualAttendanceOverrides)delete data.manualAttendanceOverrides[id];if(selectedId===id)selectedId=null;save()}
@@ -3440,11 +3456,6 @@ function openLineupWindow(eventId){
           <div id="playerPool" class="player-pool lineup-window-player-pool"></div>
         </aside>
         <main class="lineup-window-main" id="lineupWindowMain">
-          <div class="lineup-window-nav">
-            <button class="btn soft" onclick="scrollLineupSection('lineupLinesSection')">4 Linien</button>
-            <button class="btn soft" onclick="scrollLineupSection('lineupPowerplaySection')">Powerplay</button>
-            <button class="btn soft" onclick="scrollLineupSection('lineupBoxplaySection')">Boxplay</button>
-          </div>
           <div id="lineupBoard" class="lineup-board lineup-window-board"></div>
         </main>
       </div>
@@ -3461,26 +3472,24 @@ function openLineupWindow(eventId){
     body.lineup-window-open{overflow:hidden!important;}
     .lineup-open-panel{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0;padding:14px;border:1px solid #d8e3de;border-radius:12px;background:#f8fbf9;}
     .lineup-open-button{font-size:15px;padding:11px 18px;}
-    .lineup-window-overlay{position:fixed;inset:0;z-index:2147483645;background:#eef4f1;padding:14px;box-sizing:border-box;}
-    .lineup-window-shell{height:100%;max-width:1800px;margin:0 auto;background:#fff;border:1px solid #d6e2dc;border-radius:16px;box-shadow:0 18px 60px rgba(20,55,44,.18);display:flex;flex-direction:column;overflow:hidden;}
+    .lineup-window-overlay{position:fixed;inset:0;z-index:2147483645;background:#eef4f1;padding:14px;box-sizing:border-box;overflow:hidden;}
+    .lineup-window-shell{height:calc(100vh - 28px);max-height:calc(100vh - 28px);max-width:1800px;margin:0 auto;background:#fff;border:1px solid #d6e2dc;border-radius:16px;box-shadow:0 18px 60px rgba(20,55,44,.18);display:flex;flex-direction:column;overflow:hidden;}
     .lineup-window-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;border-bottom:1px solid #dfe8e4;background:#fff;}
     .lineup-window-title{font-size:22px;font-weight:800;color:#173f32;}
     .lineup-window-subtitle{margin-top:3px;color:#687a73;font-size:13px;}
     .lineup-window-close{flex:0 0 auto;}
-    .lineup-window-body{flex:1;min-height:0;display:grid;grid-template-columns:270px minmax(0,1fr);overflow:hidden;}
-    .lineup-window-sidebar{height:100%;min-height:0;padding:14px;border-right:1px solid #dfe8e4;background:#f8fbf9;display:flex;flex-direction:column;overflow:hidden;position:relative;}
+    .lineup-window-body{flex:1 1 0;min-height:0;height:0;display:grid;grid-template-columns:270px minmax(0,1fr);overflow:hidden;}
+    .lineup-window-sidebar{height:100%;min-height:0;padding:14px;border-right:1px solid #dfe8e4;background:#f8fbf9;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;}
     .lineup-window-sidebar-title{font-weight:800;font-size:16px;color:#173f32;margin-bottom:4px;}
     .lineup-window-hint{font-size:11px;line-height:1.35;margin-bottom:10px;}
-    #playerPool.lineup-window-player-pool{position:static!important;top:auto!important;display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;max-height:none!important;padding:2px 4px 14px 2px!important;}
+    #playerPool.lineup-window-player-pool{position:static!important;top:auto!important;display:flex!important;flex:1 1 0!important;min-height:0!important;height:0!important;flex-direction:column!important;flex-wrap:nowrap!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;max-height:none!important;padding:2px 4px 14px 2px!important;overscroll-behavior:contain;}
     #playerPool.lineup-window-player-pool .drag-player{flex:0 0 auto!important;width:100%!important;min-width:0!important;box-sizing:border-box!important;cursor:grab;}
-    .lineup-window-main{height:100%;min-width:0;min-height:0;overflow-y:auto!important;overflow-x:auto;padding:16px 20px 40px;scroll-behavior:auto;overscroll-behavior:contain;}
-    .lineup-window-nav{position:sticky;top:-16px;z-index:30;display:flex;gap:8px;justify-content:center;padding:10px 8px;margin:-16px -20px 14px;background:rgba(255,255,255,.96);border-bottom:1px solid #dfe8e4;backdrop-filter:blur(5px);}
-    .lineup-window-nav .btn{min-width:110px;}
+    .lineup-window-main{height:100%;min-width:0;min-height:0;overflow-x:auto;overflow-y:scroll;padding:16px 20px 80px;box-sizing:border-box;scroll-behavior:auto;overscroll-behavior:contain;}
     #lineupBoard.lineup-window-board{max-height:none!important;overflow:visible!important;margin:0!important;}
     #lineupBoard.lineup-window-board .lineup-rink{max-width:1180px;margin:0 auto;}
     @media(max-width:900px){
       .lineup-window-overlay{padding:0;}
-      .lineup-window-shell{border:0;border-radius:0;}
+      .lineup-window-shell{height:100vh;max-height:100vh;border:0;border-radius:0;}
       .lineup-window-body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);}
       .lineup-window-sidebar{border-right:0;border-bottom:1px solid #dfe8e4;padding:10px;max-height:185px;}
       #playerPool.lineup-window-player-pool{flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;padding-bottom:8px!important;}
@@ -3492,15 +3501,6 @@ function openLineupWindow(eventId){
   `;
   document.head.appendChild(style);
 })();
-
-function scrollLineupSection(sectionId){
-  const main=document.getElementById('lineupWindowMain');
-  const target=document.getElementById(sectionId);
-  if(!main||!target)return;
-  const mainRect=main.getBoundingClientRect();
-  const targetRect=target.getBoundingClientRect();
-  main.scrollTop += targetRect.top-mainRect.top-58;
-}
 
 function renderLineup(eventId){
   ensureLineup(eventId);
@@ -3541,11 +3541,6 @@ function renderLineup(eventId){
   const rink=document.createElement('div');
   rink.className='lineup-rink';
 
-  const linesAnchor=document.createElement('div');
-  linesAnchor.id='lineupLinesSection';
-  linesAnchor.className='lineup-section-anchor';
-  rink.appendChild(linesAnchor);
-
   const goalies=document.createElement('div');
   goalies.className='goalies-zone';
   for(const g of GOALIE_POSITIONS){
@@ -3578,8 +3573,7 @@ function renderLineup(eventId){
     rink.appendChild(row);
   }
   const specialTitle=document.createElement('h2');
-  specialTitle.id='lineupPowerplaySection';
-  specialTitle.textContent='Powerplay';
+  specialTitle.textContent='Special Teams';
   specialTitle.style.marginTop='28px';
   rink.appendChild(specialTitle);
 
@@ -3598,12 +3592,6 @@ function renderLineup(eventId){
     forwards.appendChild(makeSpecialTeamsSlot(eventId,'powerplay',unit,'RW','Stürmer rechts',lineup.powerplay[unit].RW));
     row.appendChild(defense); row.appendChild(forwards); rink.appendChild(row);
   }
-
-  const boxplayTitle=document.createElement('h2');
-  boxplayTitle.id='lineupBoxplaySection';
-  boxplayTitle.textContent='Boxplay';
-  boxplayTitle.style.marginTop='28px';
-  rink.appendChild(boxplayTitle);
 
   for(let unit=1;unit<=3;unit++){
     const row=document.createElement('div');
