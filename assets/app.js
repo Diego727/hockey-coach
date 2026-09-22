@@ -425,8 +425,8 @@ function removeTeamLogo(){
 
 
 function captureCoachViewState(){
-  const pool=document.getElementById(poolId);
-  const board=document.getElementById(boardId);
+  const pool=document.getElementById('playerPool');
+  const board=document.getElementById('lineupBoard');
   const details=pool?.closest('details');
   return {
     windowX:window.scrollX||0,
@@ -435,6 +435,9 @@ function captureCoachViewState(){
     poolTop:pool?.scrollTop||0,
     boardLeft:board?.scrollLeft||0,
     boardTop:board?.scrollTop||0,
+    lineupMainLeft:document.getElementById('lineupWindowMain')?.scrollLeft||0,
+    lineupMainTop:document.getElementById('lineupWindowMain')?.scrollTop||0,
+    lineupWindowEventId:window.lineupWindowEventId||null,
     lineupOpen:details?details.open:null
   };
 }
@@ -447,6 +450,8 @@ function restoreCoachViewState(state){
     if(details&&state.lineupOpen!==null)details.open=state.lineupOpen;
     if(pool){pool.scrollLeft=state.poolLeft;pool.scrollTop=state.poolTop;}
     if(board){board.scrollLeft=state.boardLeft;board.scrollTop=state.boardTop;}
+    const lineupMain=document.getElementById('lineupWindowMain');
+    if(lineupMain){lineupMain.scrollLeft=state.lineupMainLeft||0;lineupMain.scrollTop=state.lineupMainTop||0;}
     window.scrollTo(state.windowX,state.windowY);
   }));
 }
@@ -461,7 +466,6 @@ function save(){
   localStorage.setItem('hockeyCoachData_v13',JSON.stringify(data));
   renderAll();
   restoreCoachViewState(coachViewState);
-  refreshOpenLineupWindow();
   scheduleCloudSave();
 }
 function fmtDate(s){return new Intl.DateTimeFormat('de-CH',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s+'T12:00:00'))}
@@ -760,6 +764,7 @@ function openMobileCoachEventWindow(){
 
 
 function selectEvent(id){
+  if(window.lineupWindowEventId && window.lineupWindowEventId!==id) closeLineupWindow();
   selectedId=id;
   renderAll();
 
@@ -2724,9 +2729,9 @@ function renderEvents(){
 
  list.innerHTML=calendarToolbar+
    (sorted.length?'':'<p class="muted">Noch keine Termine vorhanden.</p>');
- for(const e of sorted){const a=data.attendance[e.id]||{},present=data.players.filter(p=>a[p.id]==='present').length,absent=data.players.filter(p=>a[p.id]==='absent').length;const div=document.createElement('div');div.className='event '+(selectedId===e.id?'active':'');div.onclick=()=>['training','game'].includes(e.type)?openLineupWindow(e.id):selectEvent(e.id);div.innerHTML=`<div class="date">${labels[e.type].icon} ${fmtDate(e.date)} · ${e.time}</div><small>${e.type==='game'
+ for(const e of sorted){const a=data.attendance[e.id]||{},present=data.players.filter(p=>a[p.id]==='present').length,absent=data.players.filter(p=>a[p.id]==='absent').length;const div=document.createElement('div');div.className='event '+(selectedId===e.id?'active':'');div.onclick=()=>selectEvent(e.id);div.innerHTML=`<div class="date">${labels[e.type].icon} ${fmtDate(e.date)} · ${e.time}</div><small>${e.type==='game'
   ? `${gameOpponent(e)} · ${gameHomeAwayLabel(e)} · `
-  : (e.title?e.title+' · ':'')}${present} dabei · ${absent} nicht dabei</small><div style="float:right;margin-top:-34px;display:flex;gap:6px">${['training','game'].includes(e.type)?`<button class="btn soft" style="padding:6px 8px" onclick="event.stopPropagation();selectEvent('${e.id}')">Anwesenheit</button>`:''}<button class="btn soft" style="padding:6px 8px" onclick="event.stopPropagation();editEvent('${e.id}')">Bearbeiten</button><button class="btn danger" style="padding:6px 8px" onclick="event.stopPropagation();deleteEvent('${e.id}')">Löschen</button></div>`;list.appendChild(div)}
+  : (e.title?e.title+' · ':'')}${present} dabei · ${absent} nicht dabei</small><div style="float:right;margin-top:-34px;display:flex;gap:6px"><button class="btn soft" style="padding:6px 8px" onclick="event.stopPropagation();editEvent('${e.id}')">Bearbeiten</button><button class="btn danger" style="padding:6px 8px" onclick="event.stopPropagation();deleteEvent('${e.id}')">Löschen</button></div>`;list.appendChild(div)}
 }
 function renderSelected(){
  const e=data.events.find(x=>x.id===selectedId);
@@ -2758,14 +2763,10 @@ function renderSelected(){
   <div id="attendanceList" class="attendance-quick-list"></div>
 </div>
 
-<details class="collapse-section" open>
-  <summary>Aufstellung – 4 Linien</summary>
-  <div class="collapse-body">
-    <p class="muted">Es erscheinen nur Spieler, die für diesen Termin als „dabei“ markiert sind.</p>
-    <div id="playerPool" class="player-pool"></div>
-    <div id="lineupBoard" class="lineup-board" style="margin-top:10px"></div>
-  </div>
-</details>
+<div class="lineup-open-panel">
+  <button class="btn primary lineup-open-button" onclick="openLineupWindow('${e.id}')">🏒 Aufstellung öffnen</button>
+  <span class="muted">Linien, Goalies, Powerplay und Boxplay in einer eigenen grossen Ansicht bearbeiten.</span>
+</div>
 
 <details class="collapse-section">
   <summary>Coachboard</summary>
@@ -3406,7 +3407,95 @@ function makeSpecialTeamsSlot(eventId,type,unit,posKey,label,pid){
   return slot;
 }
 
-function renderLineupInto(eventId,poolId='playerPool',boardId='lineupBoard'){
+let lineupWindowEventId=null;
+window.lineupWindowEventId=null;
+
+function closeLineupWindow(){
+  const overlay=document.getElementById('lineupWindowOverlay');
+  if(overlay)overlay.remove();
+  lineupWindowEventId=null;
+  window.lineupWindowEventId=null;
+  document.body.classList.remove('lineup-window-open');
+  mobileSelectedLineupPlayerId=null;
+}
+
+function openLineupWindow(eventId){
+  const e=data.events.find(x=>x.id===eventId);
+  if(!e)return;
+  closeLineupWindow();
+  lineupWindowEventId=eventId;
+  window.lineupWindowEventId=eventId;
+  document.body.classList.add('lineup-window-open');
+
+  const overlay=document.createElement('div');
+  overlay.id='lineupWindowOverlay';
+  overlay.className='lineup-window-overlay';
+  const subtitle=e.type==='game'
+    ? `${gameOpponent(e)} · ${gameHomeAwayLabel(e)}`
+    : (e.title||labels[e.type]?.single||'Termin');
+  overlay.innerHTML=`
+    <div class="lineup-window-shell">
+      <div class="lineup-window-header">
+        <div>
+          <div class="lineup-window-title">🏒 Aufstellung</div>
+          <div class="lineup-window-subtitle">${fmtDateLong(e.date)} · ${e.time} · ${subtitle}</div>
+        </div>
+        <button class="btn soft lineup-window-close" onclick="closeLineupWindow()">✕ Schliessen</button>
+      </div>
+      <div class="lineup-window-body" id="lineupWindowBody">
+        <aside class="lineup-window-sidebar">
+          <div class="lineup-window-sidebar-title">Spieler</div>
+          <div class="muted lineup-window-hint">Nur Spieler, die als „dabei“ markiert sind. Spieler ziehen oder anklicken und danach eine Position wählen.</div>
+          <div id="playerPool" class="player-pool lineup-window-player-pool"></div>
+        </aside>
+        <main class="lineup-window-main" id="lineupWindowMain">
+          <div id="lineupBoard" class="lineup-board lineup-window-board"></div>
+        </main>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  renderLineup(eventId);
+}
+
+(function ensureLineupWindowCss(){
+  if(document.getElementById('lineupWindowCss'))return;
+  const style=document.createElement('style');
+  style.id='lineupWindowCss';
+  style.textContent=`
+    body.lineup-window-open{overflow:hidden!important;}
+    .lineup-open-panel{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0;padding:14px;border:1px solid #d8e3de;border-radius:12px;background:#f8fbf9;}
+    .lineup-open-button{font-size:15px;padding:11px 18px;}
+    .lineup-window-overlay{position:fixed;inset:0;z-index:2147483645;background:#eef4f1;padding:14px;box-sizing:border-box;}
+    .lineup-window-shell{height:100%;max-width:1800px;margin:0 auto;background:#fff;border:1px solid #d6e2dc;border-radius:16px;box-shadow:0 18px 60px rgba(20,55,44,.18);display:flex;flex-direction:column;overflow:hidden;}
+    .lineup-window-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;border-bottom:1px solid #dfe8e4;background:#fff;}
+    .lineup-window-title{font-size:22px;font-weight:800;color:#173f32;}
+    .lineup-window-subtitle{margin-top:3px;color:#687a73;font-size:13px;}
+    .lineup-window-close{flex:0 0 auto;}
+    .lineup-window-body{flex:1;min-height:0;display:grid;grid-template-columns:270px minmax(0,1fr);overflow:hidden;}
+    .lineup-window-sidebar{min-height:0;padding:14px;border-right:1px solid #dfe8e4;background:#f8fbf9;display:flex;flex-direction:column;overflow:hidden;}
+    .lineup-window-sidebar-title{font-weight:800;font-size:16px;color:#173f32;margin-bottom:4px;}
+    .lineup-window-hint{font-size:11px;line-height:1.35;margin-bottom:10px;}
+    #playerPool.lineup-window-player-pool{position:static!important;top:auto!important;display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;max-height:none!important;padding:2px 4px 14px 2px!important;}
+    #playerPool.lineup-window-player-pool .drag-player{flex:0 0 auto!important;width:100%!important;min-width:0!important;box-sizing:border-box!important;cursor:grab;}
+    .lineup-window-main{min-width:0;min-height:0;overflow:auto;padding:16px 20px 40px;scroll-behavior:auto;}
+    #lineupBoard.lineup-window-board{max-height:none!important;overflow:visible!important;margin:0!important;}
+    #lineupBoard.lineup-window-board .lineup-rink{max-width:1180px;margin:0 auto;}
+    @media(max-width:900px){
+      .lineup-window-overlay{padding:0;}
+      .lineup-window-shell{border:0;border-radius:0;}
+      .lineup-window-body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);}
+      .lineup-window-sidebar{border-right:0;border-bottom:1px solid #dfe8e4;padding:10px;max-height:185px;}
+      #playerPool.lineup-window-player-pool{flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;padding-bottom:8px!important;}
+      #playerPool.lineup-window-player-pool .drag-player{width:145px!important;min-width:145px!important;}
+      .lineup-window-main{padding:12px 10px 35px;}
+      .lineup-window-header{padding:10px;}
+      .lineup-window-title{font-size:18px;}
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+function renderLineup(eventId){
   ensureLineup(eventId);
   const lineup=data.lineups[eventId];
   const used=new Set();
@@ -3513,81 +3602,15 @@ function renderLineupInto(eventId,poolId='playerPool',boardId='lineupBoard'){
   }
 
   board.appendChild(rink);
-  if(poolId==='playerPool')activateStickyLineupPlayerPool();
+  activateStickyLineupPlayerPool();
   requestAnimationFrame(()=>{
-    if(poolId==='playerPool')enableTouchLineupSelection(eventId);
+    enableTouchLineupSelection(eventId);
     if(mobileSelectedLineupPlayerId){
       const selected=pool.querySelector(`[data-player-id="${mobileSelectedLineupPlayerId}"]`);
       if(selected)selected.classList.add('touch-selected');
     }
   });
 }
-function renderLineup(eventId){
-  renderLineupInto(eventId,'playerPool','lineupBoard');
-}
-
-let lineupWindowEventId=null;
-function closeLineupWindow(){
-  lineupWindowEventId=null;
-  document.getElementById('lineupOnlyWindow')?.remove();
-  document.body.classList.remove('lineup-window-open');
-}
-function openLineupWindow(eventId){
-  const e=data.events.find(x=>x.id===eventId);
-  if(!e||!['training','game'].includes(e.type))return;
-  selectedId=eventId;
-  lineupWindowEventId=eventId;
-  document.getElementById('lineupOnlyWindow')?.remove();
-
-  const overlay=document.createElement('div');
-  overlay.id='lineupOnlyWindow';
-  overlay.className='lineup-only-overlay';
-  overlay.innerHTML=`
-    <div class="lineup-only-shell">
-      <div class="lineup-only-header">
-        <div>
-          <div class="lineup-only-kicker">${e.type==='game'?'SPIEL':'TRAINING'}</div>
-          <h2>${fmtDateLong(e.date)} · ${e.time}${e.type==='game'?' · '+gameOpponent(e):''}</h2>
-        </div>
-        <div class="lineup-only-actions">
-          <button class="btn soft" onclick="closeLineupWindow();selectEvent('${e.id}')">Anwesenheit / Details</button>
-          <button class="btn primary" onclick="closeLineupWindow()">Schliessen</button>
-        </div>
-      </div>
-      <div class="lineup-only-content" id="lineupOnlyContent">
-        <aside class="lineup-only-sidebar">
-          <div class="lineup-only-sidebar-title">Spieler</div>
-          <div class="muted lineup-only-hint">Nur Spieler mit Status „dabei“.</div>
-          <div id="lineupModalPlayerPool" class="player-pool lineup-modal-pool"></div>
-        </aside>
-        <main class="lineup-only-main">
-          <div id="lineupModalBoard" class="lineup-board"></div>
-        </main>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  document.body.classList.add('lineup-window-open');
-  renderLineupInto(eventId,'lineupModalPlayerPool','lineupModalBoard');
-}
-function refreshOpenLineupWindow(state){
-  if(!lineupWindowEventId)return;
-  const content=document.getElementById('lineupOnlyContent');
-  const main=document.querySelector('#lineupOnlyWindow .lineup-only-main');
-  const pool=document.getElementById('lineupModalPlayerPool');
-  const scroll={
-    contentTop:content?.scrollTop||0,
-    mainTop:main?.scrollTop||0,
-    mainLeft:main?.scrollLeft||0,
-    poolTop:pool?.scrollTop||0
-  };
-  renderLineupInto(lineupWindowEventId,'lineupModalPlayerPool','lineupModalBoard');
-  requestAnimationFrame(()=>{
-    if(content)content.scrollTop=scroll.contentTop;
-    if(main){main.scrollTop=scroll.mainTop;main.scrollLeft=scroll.mainLeft;}
-    if(pool)pool.scrollTop=scroll.poolTop;
-  });
-}
-
 function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
   for(const g of GOALIE_POSITIONS) if(data.lineups[eventId].goalies[g.key]===pid) data.lineups[eventId].goalies[g.key]=null;
@@ -8002,47 +8025,6 @@ window.addEventListener('resize',()=>{
         overflow-x:auto !important;
         -webkit-overflow-scrolling:touch;
       }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-
-// ===== Separate Aufstellungsansicht für Training / Spiel =====
-(function ensureLineupOnlyWindowCss(){
-  if(document.getElementById('lineupOnlyWindowCss'))return;
-  const style=document.createElement('style');
-  style.id='lineupOnlyWindowCss';
-  style.textContent=`
-    body.lineup-window-open{overflow:hidden!important}
-    .lineup-only-overlay{position:fixed;inset:0;z-index:12000;background:rgba(12,24,20,.62);padding:18px;display:flex}
-    .lineup-only-shell{width:100%;height:100%;background:#f7faf8;border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden}
-    .lineup-only-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;background:#fff;border-bottom:1px solid #dbe5e0}
-    .lineup-only-header h2{margin:2px 0 0;font-size:20px;color:#173f32}
-    .lineup-only-kicker{font-size:11px;font-weight:800;letter-spacing:.12em;color:#668078}
-    .lineup-only-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-    .lineup-only-content{min-height:0;flex:1;display:grid;grid-template-columns:260px minmax(0,1fr);overflow:hidden}
-    .lineup-only-sidebar{min-height:0;background:#fff;border-right:1px solid #dbe5e0;padding:14px;display:flex;flex-direction:column}
-    .lineup-only-sidebar-title{font-size:18px;font-weight:800;color:#173f32}
-    .lineup-only-hint{margin:3px 0 10px}
-    .lineup-modal-pool{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;gap:7px!important;overflow-y:auto!important;overflow-x:hidden!important;max-height:none!important;min-height:0;flex:1;position:static!important}
-    .lineup-modal-pool .drag-player{width:100%!important;min-width:0!important;box-sizing:border-box;cursor:grab}
-    .lineup-only-main{min-width:0;min-height:0;overflow:auto;padding:16px 20px 36px;scroll-behavior:auto}
-    #lineupModalBoard{margin:0 auto;max-width:1100px}
-    #lineupModalBoard .lineup-rink{padding-bottom:40px}
-    @media(max-width:800px){
-      .lineup-only-overlay{padding:0}
-      .lineup-only-shell{border-radius:0}
-      .lineup-only-header{align-items:flex-start;padding:10px 12px}
-      .lineup-only-header h2{font-size:16px}
-      .lineup-only-content{grid-template-columns:125px minmax(0,1fr)}
-      .lineup-only-sidebar{padding:8px}
-      .lineup-only-sidebar-title{font-size:15px}
-      .lineup-only-hint{font-size:10px}
-      .lineup-only-main{padding:8px 8px 28px}
-      .lineup-modal-pool .drag-player{padding:7px!important;font-size:11px!important}
-      .lineup-modal-pool .lineup-player-meta{font-size:9px!important}
-      .lineup-only-actions .btn{padding:7px 9px;font-size:11px}
     }
   `;
   document.head.appendChild(style);
