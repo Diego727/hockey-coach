@@ -3228,6 +3228,17 @@ function renderPlayers(){
   upgradePlayerPositionInput();
   playerAdminList.innerHTML='';
 
+  // Download-Leiste direkt auf der Spielerseite. Sie wird bei jedem Rendern
+  // neu erzeugt, damit keine Änderung an index.html nötig ist.
+  const exportBar=document.createElement('div');
+  exportBar.className='player-export-bar';
+  exportBar.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px 0;';
+  exportBar.innerHTML=`
+    <button class="btn soft" onclick="downloadPlayerListExcel()">📊 Spielerliste Excel</button>
+    <button class="btn soft" onclick="downloadPlayerListPdf()">📄 Spielerliste PDF</button>
+  `;
+  playerAdminList.appendChild(exportBar);
+
   let lastCategory='';
 
   for(const p of sortPlayersByCategory(data.players)){
@@ -3341,6 +3352,122 @@ function renderPlayers(){
     playerAdminList.appendChild(row);
   }
 }
+function playerListExportRows(){
+  return sortPlayersByCategory(data.players).map(p=>({
+    'Nr.':p.jerseyNumber||'',
+    'Name':p.name||'',
+    'Kategorie':playerCategoryLabel(p),
+    'Position':positionLabel(p),
+    'Schuss':p.shot||'',
+    'Geburtstag':fmtBirthday(p.birthday),
+    'E-Mail':p.email||''
+  }));
+}
+
+function safeExportFileName(value){
+  return String(value||'SC_Altstadt')
+    .trim()
+    .replace(/[^a-zA-Z0-9äöüÄÖÜ_-]+/g,'_')
+    .replace(/^_+|_+$/g,'')||'SC_Altstadt';
+}
+
+function loadSheetJs(){
+  if(window.XLSX)return Promise.resolve(window.XLSX);
+  if(window.__sheetJsPromise)return window.__sheetJsPromise;
+
+  window.__sheetJsPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.onload=()=>window.XLSX?resolve(window.XLSX):reject(new Error('Excel-Bibliothek konnte nicht geladen werden.'));
+    script.onerror=()=>reject(new Error('Excel-Bibliothek konnte nicht geladen werden.'));
+    document.head.appendChild(script);
+  });
+
+  return window.__sheetJsPromise;
+}
+
+async function downloadPlayerListExcel(){
+  const rows=playerListExportRows();
+  if(!rows.length){
+    alert('Es sind noch keine Spieler erfasst.');
+    return;
+  }
+
+  try{
+    const XLSX=await loadSheetJs();
+    const worksheet=XLSX.utils.json_to_sheet(rows,{header:['Nr.','Name','Kategorie','Position','Schuss','Geburtstag','E-Mail']});
+    worksheet['!cols']=[
+      {wch:7},{wch:28},{wch:18},{wch:20},{wch:12},{wch:14},{wch:34}
+    ];
+
+    const workbook=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook,worksheet,'Spielerliste');
+    XLSX.writeFile(workbook,`${safeExportFileName(teamDisplayName())}_Spielerliste.xlsx`);
+  }catch(error){
+    console.error(error);
+    alert('Die Excel-Datei konnte nicht erstellt werden. Bitte Internetverbindung prüfen und nochmals versuchen.');
+  }
+}
+
+function downloadPlayerListPdf(){
+  const players=sortPlayersByCategory(data.players);
+  if(!players.length){
+    alert('Es sind noch keine Spieler erfasst.');
+    return;
+  }
+
+  if(!window.jspdf?.jsPDF){
+    alert('Die PDF-Funktion ist noch nicht geladen. Bitte die Seite neu laden und nochmals versuchen.');
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+  addPdfHeader(doc,'Spielerliste');
+
+  const forwards=players.filter(p=>isForwardPosition(p)).length;
+  const defenders=players.filter(p=>isDefensePosition(p)).length;
+  const goalies=players.filter(p=>isGoaliePosition(p)).length;
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.text(
+    `Total: ${players.length} Spieler · ${forwards} Stürmer · ${defenders} Verteidiger · ${goalies} Torhüter`,
+    14,
+    38
+  );
+
+  doc.autoTable({
+    startY:44,
+    head:[['Nr.','Name','Kategorie','Position','Schuss','Geburtstag','E-Mail']],
+    body:players.map(p=>[
+      p.jerseyNumber||'–',
+      safePdfText(p.name||''),
+      safePdfText(playerCategoryLabel(p)),
+      safePdfText(positionLabel(p)),
+      safePdfText(p.shot||'–'),
+      safePdfText(fmtBirthday(p.birthday)),
+      safePdfText(p.email||'–')
+    ]),
+    margin:{left:14,right:14},
+    styles:{fontSize:8,cellPadding:2.2,overflow:'linebreak'},
+    headStyles:{fillColor:[23,63,50]},
+    columnStyles:{
+      0:{cellWidth:12},
+      1:{cellWidth:48},
+      2:{cellWidth:30},
+      3:{cellWidth:38},
+      4:{cellWidth:20},
+      5:{cellWidth:27},
+      6:{cellWidth:80}
+    },
+    theme:'grid'
+  });
+
+  doc.save(`${safeExportFileName(teamDisplayName())}_Spielerliste.pdf`);
+}
+
 function renderStats(){
  let html='<table class="stats-table"><thead><tr><th>Spieler</th><th>Nr.</th><th>Geburtstag</th><th>Position</th><th>Schuss</th><th>Dabei</th><th>Nicht dabei</th><th>Quote</th></tr></thead><tbody>';
  for(const p of sortPlayersByCategory(data.players)){
