@@ -1244,6 +1244,22 @@ function saveCoachPlayerPositions(playerId){
   changePosition(playerId,positionStorageValue(positions));
   closeModal();
 }
+function changePlayerName(id,name,inputElement=null){
+  const p=data.players.find(x=>x.id===id);
+  if(!p)return;
+  const clean=String(name||'').trim();
+  if(!clean){
+    alert('Der Spielername darf nicht leer sein.');
+    if(inputElement)inputElement.value=p.name||'';
+    return;
+  }
+  if(clean===p.name){
+    if(inputElement)inputElement.value=clean;
+    return;
+  }
+  p.name=clean;
+  save();
+}
 function changeShot(id,shot){const p=data.players.find(x=>x.id===id);if(p){p.shot=shot;save()}}
 function changeNumber(id,number){const p=data.players.find(x=>x.id===id);if(p){p.jerseyNumber=number;save()}}
 function birthdayToDisplay(value){
@@ -3156,6 +3172,12 @@ function ensurePlayerAdminGridStyles(){
       text-overflow:ellipsis;
     }
 
+    #playerAdminList .player-name-edit{
+      font-weight:800;
+      color:#173f32;
+      background:#fff;
+    }
+
     #playerAdminList .player-cell-name .role{
       white-space:nowrap;
       overflow:hidden;
@@ -3224,7 +3246,14 @@ function renderPlayers(){
 
     row.innerHTML=`
       <div class="player-cell player-cell-name">
-        <div class="name">${p.name}</div>
+        <input
+          class="player-name-edit"
+          type="text"
+          value="${String(p.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}"
+          placeholder="Name"
+          title="Spielername bearbeiten"
+          onchange="changePlayerName('${p.id}',this.value,this)"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
         <div class="role">
           ${positionLabel(p)} · ${categoryLabel} · Schuss ${p.shot||'–'}${p.jerseyNumber?' · #'+p.jerseyNumber:''}${p.birthday?' · '+fmtBirthday(p.birthday):''}
         </div>
