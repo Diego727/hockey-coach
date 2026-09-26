@@ -4888,8 +4888,11 @@ function renderViewerPortal(root){
   if(!viewer||!cloudRoot?.teams?.[viewer.teamKey])return;
 
   const team=cloudRoot.teams[viewer.teamKey];
+  // Viewer-Termine immer über dieselbe robuste Typ-Erkennung filtern.
+  // So werden auch ältere/abweichend gespeicherte Trainings und Spiele
+  // auf Mobile bei Reto/Thesi zuverlässig angezeigt.
   const events=(team.events||[])
-    .filter(event=>['training','game'].includes(event.type)&&event.date)
+    .filter(event=>['training','game'].includes(viewerEventType(event))&&event.date)
     .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
 
   ensureViewerMonth(events);
