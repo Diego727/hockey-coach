@@ -4887,10 +4887,21 @@ function renderViewerPortal(root){
   const viewer=currentViewerAccount();
   if(!viewer||!cloudRoot?.teams?.[viewer.teamKey])return;
 
-  const team=cloudRoot.teams[viewer.teamKey];
-  const events=(team.events||[])
-    .filter(event=>['training','game'].includes(viewerEventType(event))&&event.date)
-    .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+  const team=normalizeTeamData(cloudRoot.teams[viewer.teamKey]);
+  cloudRoot.teams[viewer.teamKey]=team;
+
+  // Termine direkt aus dem zugewiesenen Team. Doppelte IDs werden entfernt,
+  // damit auch migrierte/ältere Cloud-Daten in der mobilen Leseansicht sauber laufen.
+  const eventMap=new Map();
+  for(const event of (team.events||[])){
+    if(!event?.date)continue;
+    const type=viewerEventType(event);
+    if(!['training','game'].includes(type))continue;
+    const key=event.id||`${type}_${event.date}_${event.time||''}_${event.opponent||event.title||''}`;
+    eventMap.set(key,event);
+  }
+  const events=[...eventMap.values()]
+    .sort((a,b)=>(String(a.date)+(a.time||'')).localeCompare(String(b.date)+(b.time||'')));
 
   ensureViewerMonth(events);
 
@@ -5319,13 +5330,22 @@ async function loadViewerPortal(){
   }
 
   if(row?.data){
+    // Viewer exakt über denselben normalisierten Team-Datenweg laden wie die Coach-Ansicht.
+    // Das ist besonders auf Mobile wichtig, weil dort keine vorherige Coach-Teamwahl
+    // stattfindet, welche die Daten sonst bereits normalisiert hätte.
     if(row.data.teams){
       cloudRoot=row.data;
+      cloudRoot.teams ||= {};
+      cloudRoot.teams.second=normalizeTeamData(cloudRoot.teams.second||EMPTY_TEAM_DATA());
+      cloudRoot.teams.third=normalizeTeamData(cloudRoot.teams.third||{
+        players:[],events:[],attendance:{},lineups:{},boards:{},absences:[],manualAttendanceOverrides:{},settings:{}
+      });
     }else{
+      // Alte Cloud-Struktur: Die bisherigen Teamdaten gehören zur 2. Liga.
       cloudRoot={
         teams:{
           second:normalizeTeamData(row.data),
-          third:{players:[],events:[],attendance:{},lineups:{},boards:{},settings:{}}
+          third:normalizeTeamData({players:[],events:[],attendance:{},lineups:{},boards:{},absences:[],manualAttendanceOverrides:{},settings:{}})
         }
       };
     }
