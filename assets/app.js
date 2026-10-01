@@ -3492,7 +3492,8 @@ const LINE_POSITIONS=[
 ];
 const GOALIE_POSITIONS=[
   {key:'G1',label:'Goalie 1'},
-  {key:'G2',label:'Goalie 2'}
+  {key:'G2',label:'Goalie 2'},
+  {key:'G3',label:'Goalie 3'}
 ];
 const POWERPLAY_POSITIONS=[
   {key:'LD',label:'Verteidiger links'},
@@ -3509,11 +3510,18 @@ const BOXPLAY_POSITIONS=[
 ];
 function ensureLineup(eventId){
   data.lineups[eventId] ||= {};
-  data.lineups[eventId].goalies ||= {G1:null,G2:null};
+  data.lineups[eventId].goalies ||= {G1:null,G2:null,G3:null};
   for(const g of GOALIE_POSITIONS) if(!(g.key in data.lineups[eventId].goalies)) data.lineups[eventId].goalies[g.key]=null;
+  // Optionaler zweiter Spieler pro normaler Linienposition. Bestehende Aufstellungen
+  // bleiben unverändert, weil der bisherige Haupt-Slot nicht umgebaut wird.
+  data.lineups[eventId].alternates ||= {};
   for(let line=1;line<=4;line++){
     data.lineups[eventId][line] ||= {};
-    for(const pos of LINE_POSITIONS) if(!(pos.key in data.lineups[eventId][line])) data.lineups[eventId][line][pos.key]=null;
+    data.lineups[eventId].alternates[line] ||= {};
+    for(const pos of LINE_POSITIONS){
+      if(!(pos.key in data.lineups[eventId][line])) data.lineups[eventId][line][pos.key]=null;
+      if(!(pos.key in data.lineups[eventId].alternates[line])) data.lineups[eventId].alternates[line][pos.key]=null;
+    }
   }
   if(!('extraForward' in data.lineups[eventId])) data.lineups[eventId].extraForward=null;
   data.lineups[eventId].powerplay ||= {};
@@ -3534,11 +3542,18 @@ function makeSlot(eventId,line,posKey,label,pid,isGoalie=false){
   slot.dataset.pos=posKey;
   slot.dataset.goalie=isGoalie?'1':'0';
   const player=data.players.find(p=>p.id===pid);
-  slot.innerHTML=`<div class="slot-label">${label}</div>${player?`
-    <div class="assigned">${player.name}</div>
-    <div class="assigned-position">${positionLabel(player)}</div>
-    <button class="remove" onclick="removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie})">Entfernen</button>
+  const alternatePid=(!isGoalie && line!=='extraForward') ? data.lineups[eventId]?.alternates?.[line]?.[posKey] : null;
+  const alternate=data.players.find(p=>p.id===alternatePid);
+  const playerBlock=(p,which)=>p?`<div class="lineup-assigned-player ${which==='alternate'?'lineup-alternate-player':''}">
+    <div class="assigned">${p.name}</div>
+    <div class="assigned-position">${positionLabel(p)}</div>
+    <button class="remove" onclick="event.stopPropagation();removeFromLineup('${eventId}','${line}','${posKey}',${isGoalie},'${which}')">Entfernen</button>
+  </div>`:'';
+  slot.innerHTML=`<div class="slot-label">${label}</div>${player||alternate?`
+    ${playerBlock(player,'primary')}
+    ${playerBlock(alternate,'alternate')}
   `:'<div class="muted">Spieler hierher ziehen</div>'}`;
+  if(alternate)slot.classList.add('lineup-slot-double');
   slot.addEventListener('dragover',ev=>{ev.preventDefault();slot.classList.add('dragover')});
   slot.addEventListener('dragleave',()=>slot.classList.remove('dragover'));
   slot.addEventListener('drop',ev=>{
@@ -3642,6 +3657,8 @@ function downloadLineupRoster(eventId){
     for(const pos of LINE_POSITIONS){
       const pid=lineup[line]?.[pos.key];
       if(pid&&!lineupPlayerIds.includes(pid))lineupPlayerIds.push(pid);
+      const alt=lineup.alternates?.[line]?.[pos.key];
+      if(alt&&!lineupPlayerIds.includes(alt))lineupPlayerIds.push(alt);
     }
   }
   if(lineup.extraForward&&!lineupPlayerIds.includes(lineup.extraForward))lineupPlayerIds.push(lineup.extraForward);
@@ -3699,6 +3716,9 @@ function downloadLineupOnly(eventId){
     .lineup-window-shell{height:calc(100vh - 28px);max-height:calc(100vh - 28px);max-width:1800px;margin:0 auto;background:#fff;border:1px solid #d6e2dc;border-radius:16px;box-shadow:0 18px 60px rgba(20,55,44,.18);display:flex;flex-direction:column;overflow:hidden;}
     .lineup-window-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;border-bottom:1px solid #dfe8e4;background:#fff;}
     .lineup-window-title{font-size:22px;font-weight:800;color:#173f32;}
+    .lineup-slot-double{padding-bottom:6px!important;}
+    .lineup-slot-double .lineup-assigned-player{padding:3px 2px;}
+    .lineup-slot-double .lineup-alternate-player{margin-top:5px;padding-top:5px;border-top:1px solid #d8e3de;}
     .lineup-window-subtitle{margin-top:3px;color:#687a73;font-size:13px;}
     .lineup-window-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
     .lineup-window-close{flex:0 0 auto;}
@@ -3731,7 +3751,10 @@ function renderLineup(eventId){
   const lineup=data.lineups[eventId];
   const used=new Set();
   for(const g of GOALIE_POSITIONS){const pid=lineup.goalies[g.key];if(pid)used.add(pid)}
-  for(let line=1;line<=4;line++) for(const pos of LINE_POSITIONS){const pid=lineup[line][pos.key];if(pid)used.add(pid)}
+  for(let line=1;line<=4;line++) for(const pos of LINE_POSITIONS){
+    const pid=lineup[line][pos.key];if(pid)used.add(pid);
+    const alt=lineup.alternates?.[line]?.[pos.key];if(alt)used.add(alt);
+  }
   if(lineup.extraForward)used.add(lineup.extraForward);
 
   const pool=document.getElementById('playerPool');
@@ -3860,7 +3883,10 @@ function renderLineup(eventId){
 function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
   for(const g of GOALIE_POSITIONS) if(data.lineups[eventId].goalies[g.key]===pid) data.lineups[eventId].goalies[g.key]=null;
-  for(let l=1;l<=4;l++) for(const p of LINE_POSITIONS) if(data.lineups[eventId][l][p.key]===pid) data.lineups[eventId][l][p.key]=null;
+  for(let l=1;l<=4;l++) for(const p of LINE_POSITIONS){
+    if(data.lineups[eventId][l][p.key]===pid) data.lineups[eventId][l][p.key]=null;
+    if(data.lineups[eventId].alternates?.[l]?.[p.key]===pid) data.lineups[eventId].alternates[l][p.key]=null;
+  }
   if(data.lineups[eventId].extraForward===pid)data.lineups[eventId].extraForward=null;
 }
 function assignToLineup(eventId,line,pos,pid,isGoalie=false){
@@ -3868,14 +3894,27 @@ function assignToLineup(eventId,line,pos,pid,isGoalie=false){
   clearPlayerFromLineup(eventId,pid);
   if(isGoalie) data.lineups[eventId].goalies[pos]=pid;
   else if(line==='extraForward') data.lineups[eventId].extraForward=pid;
-  else data.lineups[eventId][line][pos]=pid;
+  else{
+    const primary=data.lineups[eventId][line][pos];
+    const alternate=data.lineups[eventId].alternates[line][pos];
+    if(!primary) data.lineups[eventId][line][pos]=pid;
+    else if(!alternate && primary!==pid) data.lineups[eventId].alternates[line][pos]=pid;
+    else if(alternate) data.lineups[eventId].alternates[line][pos]=pid;
+    else data.lineups[eventId][line][pos]=pid;
+  }
   save();
 }
-function removeFromLineup(eventId,line,pos,isGoalie=false){
+function removeFromLineup(eventId,line,pos,isGoalie=false,which='primary'){
   ensureLineup(eventId);
   if(isGoalie) data.lineups[eventId].goalies[pos]=null;
   else if(line==='extraForward') data.lineups[eventId].extraForward=null;
-  else data.lineups[eventId][line][pos]=null;
+  else if(which==='alternate') data.lineups[eventId].alternates[line][pos]=null;
+  else{
+    // Falls ein zweiter Spieler vorhanden ist, rückt er beim Entfernen des ersten nach.
+    const alt=data.lineups[eventId].alternates[line][pos];
+    data.lineups[eventId][line][pos]=alt||null;
+    data.lineups[eventId].alternates[line][pos]=null;
+  }
   save();
 }
 function assignToSpecialTeams(eventId,type,unit,pos,pid){
@@ -4056,15 +4095,20 @@ function pdfLineupRows(eventId){
     return p?p.name:'–';
   };
   const rows=[];
-  rows.push(['Goalies',pname(data.lineups[eventId].goalies.G1),pname(data.lineups[eventId].goalies.G2),'','','']);
+  const slotName=(line,pos)=>{
+    const primary=pname(data.lineups[eventId][line][pos]);
+    const altPid=data.lineups[eventId].alternates?.[line]?.[pos];
+    return altPid?`${primary} / ${pname(altPid)}`:primary;
+  };
+  rows.push(['Goalies',pname(data.lineups[eventId].goalies.G1),pname(data.lineups[eventId].goalies.G2),pname(data.lineups[eventId].goalies.G3),'','']);
   for(let line=1;line<=4;line++){
     rows.push([
       String(line),
-      pname(data.lineups[eventId][line].LD),
-      pname(data.lineups[eventId][line].RD),
-      pname(data.lineups[eventId][line].LW),
-      pname(data.lineups[eventId][line].C),
-      pname(data.lineups[eventId][line].RW)
+      slotName(line,'LD'),
+      slotName(line,'RD'),
+      slotName(line,'LW'),
+      slotName(line,'C'),
+      slotName(line,'RW')
     ]);
   }
   return rows;
@@ -4165,7 +4209,7 @@ function addLineupTable(doc,event,startY){
       return player?safePdfText(player.name):'–';
     };
 
-    const drawSlot=(x,y,w,h,label,pid)=>{
+    const drawSlot=(x,y,w,h,label,pid,alternatePid=null)=>{
       doc.setDrawColor(158,190,177);
       doc.setFillColor(255,255,255);
       doc.roundedRect(x,y,w,h,2.5,2.5,'FD');
@@ -4184,9 +4228,20 @@ function addLineupTable(doc,event,startY){
       doc.setFontSize(8.5);
       doc.setTextColor(46,58,53);
 
-      const lines=doc.splitTextToSize(pname(pid),w-8).slice(0,2);
-      const nameY=y+(h/2)+(lines.length===1?2:0);
-      doc.text(lines,x+w/2,nameY,{align:'center'});
+      if(alternatePid){
+        // Nur doppelt belegte Positionen werden im Export geteilt.
+        doc.setDrawColor(205,216,211);
+        doc.line(x+w/2,y+6,x+w/2,y+h-2);
+        doc.setFontSize(7.2);
+        const left=doc.splitTextToSize(pname(pid),(w/2)-6).slice(0,2);
+        const right=doc.splitTextToSize(pname(alternatePid),(w/2)-6).slice(0,2);
+        doc.text(left,x+w/4,y+(h/2)+2,{align:'center'});
+        doc.text(right,x+(w*3/4),y+(h/2)+2,{align:'center'});
+      }else{
+        const lines=doc.splitTextToSize(pname(pid),w-8).slice(0,2);
+        const nameY=y+(h/2)+(lines.length===1?2:0);
+        doc.text(lines,x+w/2,nameY,{align:'center'});
+      }
     };
 
     // Kopf
@@ -4204,12 +4259,12 @@ function addLineupTable(doc,event,startY){
     doc.text(`${fmtDateLong(event.date)} · ${event.time}`,titleX,20);
 
     // Goalies
-    const goalieCardW=64;
-    const goalieGap=10;
-    const goalieStartX=(pageWidth-(goalieCardW*2+goalieGap))/2;
+    const goalieCardW=54;
+    const goalieGap=5;
+    const goalieStartX=(pageWidth-(goalieCardW*3+goalieGap*2))/2;
     const goalieY=29;
 
-    ['G1','G2'].forEach((key,index)=>{
+    ['G1','G2','G3'].forEach((key,index)=>{
       const x=goalieStartX+index*(goalieCardW+goalieGap);
 
       doc.setDrawColor(216,227,222);
@@ -4251,17 +4306,17 @@ function addLineupTable(doc,event,startY){
       const defGap=5;
       const defStartX=(pageWidth-(defW*2+defGap))/2;
 
-      drawSlot(defStartX,y+9,defW,16,'Verteidiger links',lineup[line].LD);
-      drawSlot(defStartX+defW+defGap,y+9,defW,16,'Verteidiger rechts',lineup[line].RD);
+      drawSlot(defStartX,y+9,defW,16,'Verteidiger links',lineup[line].LD,lineup.alternates?.[line]?.LD);
+      drawSlot(defStartX+defW+defGap,y+9,defW,16,'Verteidiger rechts',lineup[line].RD,lineup.alternates?.[line]?.RD);
 
       // Stürmer links / Center / rechts
       const fwGap=4;
       const fwW=(contentWidth-12-(fwGap*2))/3;
       const fwStartX=margin+6;
 
-      drawSlot(fwStartX,y+28,fwW,16,'Stürmer links',lineup[line].LW);
-      drawSlot(fwStartX+fwW+fwGap,y+28,fwW,16,'Center',lineup[line].C);
-      drawSlot(fwStartX+(fwW+fwGap)*2,y+28,fwW,16,'Stürmer rechts',lineup[line].RW);
+      drawSlot(fwStartX,y+28,fwW,16,'Stürmer links',lineup[line].LW,lineup.alternates?.[line]?.LW);
+      drawSlot(fwStartX+fwW+fwGap,y+28,fwW,16,'Center',lineup[line].C,lineup.alternates?.[line]?.C);
+      drawSlot(fwStartX+(fwW+fwGap)*2,y+28,fwW,16,'Stürmer rechts',lineup[line].RW,lineup.alternates?.[line]?.RW);
 
       y+=lineBoxH+lineGap;
     }
