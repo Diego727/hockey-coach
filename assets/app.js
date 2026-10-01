@@ -3524,15 +3524,26 @@ function ensureLineup(eventId){
     }
   }
   if(!('extraForward' in data.lineups[eventId])) data.lineups[eventId].extraForward=null;
+  data.lineups[eventId].specialAlternates ||= {powerplay:{},boxplay:{}};
+  data.lineups[eventId].specialAlternates.powerplay ||= {};
+  data.lineups[eventId].specialAlternates.boxplay ||= {};
   data.lineups[eventId].powerplay ||= {};
   for(let unit=1;unit<=2;unit++){
     data.lineups[eventId].powerplay[unit] ||= {};
-    for(const pos of POWERPLAY_POSITIONS) if(!(pos.key in data.lineups[eventId].powerplay[unit])) data.lineups[eventId].powerplay[unit][pos.key]=null;
+    data.lineups[eventId].specialAlternates.powerplay[unit] ||= {};
+    for(const pos of POWERPLAY_POSITIONS){
+      if(!(pos.key in data.lineups[eventId].powerplay[unit])) data.lineups[eventId].powerplay[unit][pos.key]=null;
+      if(!(pos.key in data.lineups[eventId].specialAlternates.powerplay[unit])) data.lineups[eventId].specialAlternates.powerplay[unit][pos.key]=null;
+    }
   }
   data.lineups[eventId].boxplay ||= {};
   for(let unit=1;unit<=3;unit++){
     data.lineups[eventId].boxplay[unit] ||= {};
-    for(const pos of BOXPLAY_POSITIONS) if(!(pos.key in data.lineups[eventId].boxplay[unit])) data.lineups[eventId].boxplay[unit][pos.key]=null;
+    data.lineups[eventId].specialAlternates.boxplay[unit] ||= {};
+    for(const pos of BOXPLAY_POSITIONS){
+      if(!(pos.key in data.lineups[eventId].boxplay[unit])) data.lineups[eventId].boxplay[unit][pos.key]=null;
+      if(!(pos.key in data.lineups[eventId].specialAlternates.boxplay[unit])) data.lineups[eventId].specialAlternates.boxplay[unit][pos.key]=null;
+    }
   }
 }
 function makeSlot(eventId,line,posKey,label,pid,isGoalie=false){
@@ -3571,11 +3582,18 @@ function makeSpecialTeamsSlot(eventId,type,unit,posKey,label,pid){
   slot.dataset.goalie='0';
   slot.dataset.special=type;
   const player=data.players.find(p=>p.id===pid);
-  slot.innerHTML=`<div class="slot-label">${label}</div>${player?`
-    <div class="assigned">${player.name}</div>
-    <div class="assigned-position">${positionLabel(player)}</div>
-    <button class="remove" onclick="removeFromSpecialTeams('${eventId}','${type}',${unit},'${posKey}')">Entfernen</button>
+  const alternatePid=data.lineups[eventId]?.specialAlternates?.[type]?.[unit]?.[posKey]||null;
+  const alternate=data.players.find(p=>p.id===alternatePid);
+  const playerBlock=(p,which)=>p?`<div class="lineup-assigned-player ${which==='alternate'?'lineup-alternate-player':''}">
+    <div class="assigned">${p.name}</div>
+    <div class="assigned-position">${positionLabel(p)}</div>
+    <button class="remove" onclick="event.stopPropagation();removeFromSpecialTeams('${eventId}','${type}',${unit},'${posKey}','${which}')">Entfernen</button>
+  </div>`:'';
+  slot.innerHTML=`<div class="slot-label">${label}</div>${player||alternate?`
+    ${playerBlock(player,'primary')}
+    ${playerBlock(alternate,'alternate')}
   `:'<div class="muted">Spieler hierher ziehen</div>'}`;
+  if(alternate)slot.classList.add('lineup-slot-double');
   slot.addEventListener('dragover',ev=>{ev.preventDefault();slot.classList.add('dragover')});
   slot.addEventListener('dragleave',()=>slot.classList.remove('dragover'));
   slot.addEventListener('drop',ev=>{
@@ -3920,13 +3938,31 @@ function removeFromLineup(eventId,line,pos,isGoalie=false,which='primary'){
 function assignToSpecialTeams(eventId,type,unit,pos,pid){
   ensureLineup(eventId);
   if(!['powerplay','boxplay'].includes(type))return;
-  data.lineups[eventId][type][unit][pos]=pid;
+  // Innerhalb der Special Teams denselben Spieler nicht doppelt führen.
+  for(const t of ['powerplay','boxplay']){
+    const max=t==='powerplay'?2:3;
+    const positions=t==='powerplay'?POWERPLAY_POSITIONS:BOXPLAY_POSITIONS;
+    for(let u=1;u<=max;u++) for(const p of positions){
+      if(data.lineups[eventId][t]?.[u]?.[p.key]===pid) data.lineups[eventId][t][u][p.key]=null;
+      if(data.lineups[eventId].specialAlternates?.[t]?.[u]?.[p.key]===pid) data.lineups[eventId].specialAlternates[t][u][p.key]=null;
+    }
+  }
+  const primary=data.lineups[eventId][type][unit][pos];
+  const alternate=data.lineups[eventId].specialAlternates[type][unit][pos];
+  if(!primary) data.lineups[eventId][type][unit][pos]=pid;
+  else if(!alternate && primary!==pid) data.lineups[eventId].specialAlternates[type][unit][pos]=pid;
+  else data.lineups[eventId].specialAlternates[type][unit][pos]=pid;
   save();
 }
-function removeFromSpecialTeams(eventId,type,unit,pos){
+function removeFromSpecialTeams(eventId,type,unit,pos,which='primary'){
   ensureLineup(eventId);
   if(!['powerplay','boxplay'].includes(type))return;
-  data.lineups[eventId][type][unit][pos]=null;
+  if(which==='alternate') data.lineups[eventId].specialAlternates[type][unit][pos]=null;
+  else{
+    const alt=data.lineups[eventId].specialAlternates[type][unit][pos];
+    data.lineups[eventId][type][unit][pos]=alt||null;
+    data.lineups[eventId].specialAlternates[type][unit][pos]=null;
+  }
   save();
 }
 function lineupReport(eventId){
@@ -4356,18 +4392,18 @@ function addLineupTable(doc,event,startY){
       doc.text(title,stPageWidth/2,sty+6,{align:'center'});
       if(slots.length===5){
         const defW=69, gap=5, defX=(stPageWidth-(defW*2+gap))/2;
-        drawSlot(defX,sty+9,defW,16,slots[0][0],slots[0][1]);
-        drawSlot(defX+defW+gap,sty+9,defW,16,slots[1][0],slots[1][1]);
+        drawSlot(defX,sty+9,defW,16,slots[0][0],slots[0][1],slots[0][2]);
+        drawSlot(defX+defW+gap,sty+9,defW,16,slots[1][0],slots[1][1],slots[1][2]);
         const fwGap=4, fwW=(stContentWidth-12-(fwGap*2))/3, fwX=stMargin+6;
-        drawSlot(fwX,sty+28,fwW,16,slots[2][0],slots[2][1]);
-        drawSlot(fwX+fwW+fwGap,sty+28,fwW,16,slots[3][0],slots[3][1]);
-        drawSlot(fwX+(fwW+fwGap)*2,sty+28,fwW,16,slots[4][0],slots[4][1]);
+        drawSlot(fwX,sty+28,fwW,16,slots[2][0],slots[2][1],slots[2][2]);
+        drawSlot(fwX+fwW+fwGap,sty+28,fwW,16,slots[3][0],slots[3][1],slots[3][2]);
+        drawSlot(fwX+(fwW+fwGap)*2,sty+28,fwW,16,slots[4][0],slots[4][1],slots[4][2]);
       }else{
         const gap=5, w=(stContentWidth-12-gap)/2, x=stMargin+6;
-        drawSlot(x,sty+9,w,14,slots[0][0],slots[0][1]);
-        drawSlot(x+w+gap,sty+9,w,14,slots[1][0],slots[1][1]);
-        drawSlot(x,sty+25,w,14,slots[2][0],slots[2][1]);
-        drawSlot(x+w+gap,sty+25,w,14,slots[3][0],slots[3][1]);
+        drawSlot(x,sty+9,w,14,slots[0][0],slots[0][1],slots[0][2]);
+        drawSlot(x+w+gap,sty+9,w,14,slots[1][0],slots[1][1],slots[1][2]);
+        drawSlot(x,sty+25,w,14,slots[2][0],slots[2][1],slots[2][2]);
+        drawSlot(x+w+gap,sty+25,w,14,slots[3][0],slots[3][1],slots[3][2]);
       }
       sty+=boxH+5;
     };
@@ -4375,16 +4411,16 @@ function addLineupTable(doc,event,startY){
     for(let unit=1;unit<=2;unit++){
       const pp=lineup.powerplay[unit];
       drawSpecialUnit(`Powerplay ${unit}`,[
-        ['Verteidiger links',pp.LD],['Verteidiger rechts',pp.RD],
-        ['Stürmer links',pp.LW],['Center',pp.C],['Stürmer rechts',pp.RW]
+        ['Verteidiger links',pp.LD,lineup.specialAlternates?.powerplay?.[unit]?.LD],['Verteidiger rechts',pp.RD,lineup.specialAlternates?.powerplay?.[unit]?.RD],
+        ['Stürmer links',pp.LW,lineup.specialAlternates?.powerplay?.[unit]?.LW],['Center',pp.C,lineup.specialAlternates?.powerplay?.[unit]?.C],['Stürmer rechts',pp.RW,lineup.specialAlternates?.powerplay?.[unit]?.RW]
       ]);
     }
     for(let unit=1;unit<=3;unit++){
       const bp=lineup.boxplay[unit];
       if(sty>245){doc.addPage();sty=20;}
       drawSpecialUnit(`Boxplay ${unit}`,[
-        ['Stürmer 1',bp.F1],['Stürmer 2',bp.F2],
-        ['Verteidiger 1',bp.D1],['Verteidiger 2',bp.D2]
+        ['Stürmer 1',bp.F1,lineup.specialAlternates?.boxplay?.[unit]?.F1],['Stürmer 2',bp.F2,lineup.specialAlternates?.boxplay?.[unit]?.F2],
+        ['Verteidiger 1',bp.D1,lineup.specialAlternates?.boxplay?.[unit]?.D1],['Verteidiger 2',bp.D2,lineup.specialAlternates?.boxplay?.[unit]?.D2]
       ]);
     }
 
