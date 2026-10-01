@@ -3606,7 +3606,8 @@ function makeSpecialTeamsSlot(eventId,type,unit,posKey,label,pid){
   slot.addEventListener('drop',ev=>{
     ev.preventDefault();slot.classList.remove('dragover');
     const draggedPid=ev.dataTransfer.getData('text/plain');
-    assignToSpecialTeams(eventId,type,unit,posKey,draggedPid);
+    if(type==='boxplay') assignToBoxplay(eventId,unit,posKey,draggedPid);
+    else assignToSpecialTeams(eventId,type,unit,posKey,draggedPid);
   });
   return slot;
 }
@@ -3959,6 +3960,21 @@ function assignToSpecialTeams(eventId,type,unit,pos,pid){
   save();
   if(document.getElementById('lineupBoard'))renderLineup(eventId);
 }
+function assignToBoxplay(eventId,unit,pos,pid){
+  ensureLineup(eventId);
+  unit=Number(unit);
+  if(!pid||unit<1||unit>3||!BOXPLAY_POSITIONS.some(p=>p.key===pos))return;
+  const bp=data.lineups[eventId].boxplay[unit];
+  const alt=data.lineups[eventId].alternates.boxplay[unit];
+  const primary=bp[pos];
+  const secondary=alt[pos];
+  if(primary===pid||secondary===pid)return;
+  if(!primary)bp[pos]=pid;
+  else alt[pos]=pid;
+  save();
+  if(document.getElementById('lineupBoard'))renderLineup(eventId);
+}
+
 function removeFromSpecialTeams(eventId,type,unit,pos,which=1,ev=null){
   if(ev)ev.stopPropagation();
   ensureLineup(eventId);
@@ -8265,7 +8281,8 @@ function enableTouchLineupSelection(eventId){
       if(!line||!pos)return;
 
       if(special){
-        assignToSpecialTeams(eventId,special,Number(line),pos,mobileSelectedLineupPlayerId);
+        if(special==='boxplay') assignToBoxplay(eventId,Number(line),pos,mobileSelectedLineupPlayerId);
+        else assignToSpecialTeams(eventId,special,Number(line),pos,mobileSelectedLineupPlayerId);
       }else{
         assignToLineup(
           eventId,
