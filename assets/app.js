@@ -3921,6 +3921,7 @@ function assignToLineup(eventId,line,pos,pid,isGoalie=false){
     else data.lineups[eventId][line][pos]=pid;
   }
   save();
+  if(document.getElementById('lineupWindowOverlay'))renderLineup(eventId);
 }
 function removeFromLineup(eventId,line,pos,isGoalie=false,which='primary'){
   ensureLineup(eventId);
@@ -3934,6 +3935,7 @@ function removeFromLineup(eventId,line,pos,isGoalie=false,which='primary'){
     data.lineups[eventId].alternates[line][pos]=null;
   }
   save();
+  if(document.getElementById('lineupWindowOverlay'))renderLineup(eventId);
 }
 function assignToSpecialTeams(eventId,type,unit,pos,pid){
   ensureLineup(eventId);
@@ -3953,6 +3955,7 @@ function assignToSpecialTeams(eventId,type,unit,pos,pid){
   else if(!alternate && primary!==pid) data.lineups[eventId].specialAlternates[type][unit][pos]=pid;
   else data.lineups[eventId].specialAlternates[type][unit][pos]=pid;
   save();
+  if(document.getElementById('lineupWindowOverlay'))renderLineup(eventId);
 }
 function removeFromSpecialTeams(eventId,type,unit,pos,which='primary'){
   ensureLineup(eventId);
@@ -3964,6 +3967,7 @@ function removeFromSpecialTeams(eventId,type,unit,pos,which='primary'){
     data.lineups[eventId].specialAlternates[type][unit][pos]=null;
   }
   save();
+  if(document.getElementById('lineupWindowOverlay'))renderLineup(eventId);
 }
 function lineupReport(eventId){
   ensureLineup(eventId);
