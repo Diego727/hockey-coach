@@ -3473,6 +3473,7 @@ function statsGames(){
   return (data.events||[]).filter(e=>e.type==='game').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 const GAME_STAT_KEYS=['chk','bs','cf','ca','cfi','cai','plusMinus','ppPlus','ppMinus','pkPlus','pkMinus','goals','a1','a2'];
+const GOALIE_STAT_KEYS=['shotsAgainst','goalsAgainst'];
 const GAME_STAT_LABELS={chk:'CHK',bs:'BS',cf:'CF',ca:'CA',cfi:'CFI',cai:'CAI',plusMinus:'+/-',ppPlus:'PP+',ppMinus:'PP-',pkPlus:'PK+',pkMinus:'PK-',goals:'G',a1:'1. Assist',a2:'2. Assist'};
 let statsSelectedGameId=null;
 function ensureGameStats(eventId){
@@ -3486,7 +3487,7 @@ function ensureGameStats(eventId){
 function ensurePlayerGameStats(eventId,pid){
   const gs=ensureGameStats(eventId);
   gs.players[pid] ||= {};
-  for(const key of GAME_STAT_KEYS) if(!Number.isFinite(Number(gs.players[pid][key]))) gs.players[pid][key]=0;
+  for(const key of [...GAME_STAT_KEYS,...GOALIE_STAT_KEYS]) if(!Number.isFinite(Number(gs.players[pid][key]))) gs.players[pid][key]=0;
   return gs.players[pid];
 }
 function statCandidatePlayers(eventId){
@@ -3514,6 +3515,11 @@ function statsCounter(eventId,pid,key){
   return `<div class="stat-counter"><button type="button" onclick="changeGameStat('${eventId}','${pid}','${key}',-1)">−</button><strong>${value}</strong><button type="button" onclick="changeGameStat('${eventId}','${pid}','${key}',1)">+</button></div>`;
 }
 function statsPlayerName(p){return `${p.jerseyNumber?`#${p.jerseyNumber} · `:''}${p.name||''}`}
+function goalieSavePct(ps){
+  const shots=Number(ps.shotsAgainst||0),ga=Number(ps.goalsAgainst||0);
+  if(!shots)return '–';
+  return `${Math.max(0,(shots-ga)/shots*100).toFixed(1)} %`;
+}
 function renderStats(){
   if(!window.stats)return;
   const games=statsGames();
@@ -3525,26 +3531,39 @@ function renderStats(){
   const selected=gs.selectedPlayers.map(id=>data.players.find(p=>p.id===id)).filter(Boolean);
   const options=games.map(g=>`<option value="${g.id}" ${g.id===event.id?'selected':''}>${fmtDate(g.date)} · ${gameOpponent(g)||g.title||'Spiel'}</option>`).join('');
   const picker=candidates.map(p=>`<label class="stats-player-pick"><input type="checkbox" ${gs.selectedPlayers.includes(p.id)?'checked':''} onchange="toggleStatsPlayer('${event.id}','${p.id}',this.checked)"><span>${statsPlayerName(p)}</span></label>`).join('');
-  const rows=selected.map(p=>`<tr><td class="stats-name">${statsPlayerName(p)}</td>${['chk','bs','cf','ca','cfi','cai'].map(k=>`<td>${statsCounter(event.id,p.id,k)}</td>`).join('')}<td><button class="btn soft stats-more-btn" type="button" onclick="toggleMoreStats('${p.id}')">Weitere</button></td></tr><tr id="moreStats_${p.id}" class="stats-more-row hidden"><td colspan="8"><div class="stats-more-grid">${['plusMinus','ppPlus','ppMinus','pkPlus','pkMinus','goals','a1','a2'].map(k=>`<div class="stats-extra"><span>${GAME_STAT_LABELS[k]}</span>${statsCounter(event.id,p.id,k)}</div>`).join('')}</div></td></tr>`).join('');
-  const teamTotals={}; for(const k of GAME_STAT_KEYS)teamTotals[k]=selected.reduce((sum,p)=>sum+Number(ensurePlayerGameStats(event.id,p.id)[k]||0),0);
-  stats.innerHTML=`<div class="stats-shell"><div class="stats-head"><div><h2>Game Stats</h2><div class="muted">Videoanalyse pro Spiel · Änderungen werden automatisch gespeichert.</div></div><button class="btn primary" type="button" onclick="downloadGameStatsPdf('${event.id}')" ${selected.length?'':'disabled'}>Statistik PDF</button></div><div class="stats-game-select"><label>Spiel auswählen</label><select onchange="selectStatsGame(this.value)">${options}</select></div><details class="stats-player-picker" ${selected.length?'':'open'}><summary>Spieler auswählen <span>${selected.length} ausgewählt</span></summary><div class="stats-player-picks">${picker||'<span class="muted">Für dieses Spiel sind keine Spieler als dabei erfasst.</span>'}</div></details><div class="stats-team-strip"><strong>Team</strong><span>CF <b>${teamTotals.cf}</b></span><span>CA <b>${teamTotals.ca}</b></span><span>CFI <b>${teamTotals.cfi}</b></span><span>CAI <b>${teamTotals.cai}</b></span></div>${selected.length?`<div class="stats-live-wrap"><table class="stats-live-table"><thead><tr><th>Spieler</th><th>CHK</th><th>BS</th><th>CF</th><th>CA</th><th>CFI</th><th>CAI</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="card"><p>Wähle oben die Spieler aus, die in diesem Spiel tatsächlich gespielt haben.</p></div>'}</div>`;
+  const skaters=selected.filter(p=>!isGoaliePosition(p));
+  const goalies=selected.filter(p=>isGoaliePosition(p));
+  const skaterRows=skaters.map(p=>`<tr><td class="stats-name">${statsPlayerName(p)}</td>${['chk','bs','cf','ca','cfi','cai'].map(k=>`<td>${statsCounter(event.id,p.id,k)}</td>`).join('')}<td><button class="btn soft stats-more-btn" type="button" onclick="toggleMoreStats('${p.id}')">Weitere</button></td></tr><tr id="moreStats_${p.id}" class="stats-more-row hidden"><td colspan="8"><div class="stats-more-grid">${['plusMinus','ppPlus','ppMinus','pkPlus','pkMinus','goals','a1','a2'].map(k=>`<div class="stats-extra"><span>${GAME_STAT_LABELS[k]}</span>${statsCounter(event.id,p.id,k)}</div>`).join('')}</div></td></tr>`).join('');
+  const goalieRows=goalies.map(p=>{const ps=ensurePlayerGameStats(event.id,p.id);return `<tr><td class="stats-name">${statsPlayerName(p)}</td><td>${statsCounter(event.id,p.id,'shotsAgainst')}</td><td>${statsCounter(event.id,p.id,'goalsAgainst')}</td><td><strong>${goalieSavePct(ps)}</strong></td></tr>`}).join('');
+  const teamTotals={}; for(const k of GAME_STAT_KEYS)teamTotals[k]=skaters.reduce((sum,p)=>sum+Number(ensurePlayerGameStats(event.id,p.id)[k]||0),0);
+  stats.innerHTML=`<div class="stats-shell"><div class="stats-head"><div><h2>Game Stats</h2><div class="muted">Videoanalyse pro Spiel · Änderungen werden automatisch gespeichert.</div></div><button class="btn primary" type="button" onclick="downloadGameStatsPdf('${event.id}')" ${selected.length?'':'disabled'}>Statistik PDF</button></div><div class="stats-game-select"><label>Spiel auswählen</label><select onchange="selectStatsGame(this.value)">${options}</select></div><details class="stats-player-picker" ${selected.length?'':'open'}><summary>Spieler auswählen <span>${selected.length} ausgewählt</span></summary><div class="stats-player-picks">${picker||'<span class="muted">Für dieses Spiel sind keine Spieler als dabei erfasst.</span>'}</div></details><div class="stats-team-strip"><strong>Team</strong><span>CF <b>${teamTotals.cf}</b></span><span>CA <b>${teamTotals.ca}</b></span><span>CFI <b>${teamTotals.cfi}</b></span><span>CAI <b>${teamTotals.cai}</b></span></div>${selected.length?`${skaters.length?`<div class="stats-live-wrap"><table class="stats-live-table"><thead><tr><th>Spieler</th><th>CHK</th><th>BS</th><th>CF</th><th>CA</th><th>CFI</th><th>CAI</th><th></th></tr></thead><tbody>${skaterRows}</tbody></table></div>`:''}${goalies.length?`<div class="stats-goalie-section"><h3>Goalies</h3><div class="stats-live-wrap"><table class="stats-live-table stats-goalie-table"><thead><tr><th>Goalie</th><th>Schüsse</th><th>Gegentore</th><th>Save Quote</th></tr></thead><tbody>${goalieRows}</tbody></table></div></div>`:''}`:'<div class="card"><p>Wähle oben die Spieler aus, die in diesem Spiel tatsächlich gespielt haben.</p></div>'}</div>`;
 }
 function toggleMoreStats(pid){document.getElementById('moreStats_'+pid)?.classList.toggle('hidden')}
 function downloadGameStatsPdf(eventId){
   const event=(data.events||[]).find(e=>e.id===eventId); if(!event)return;
   const gs=ensureGameStats(eventId); const players=gs.selectedPlayers.map(id=>data.players.find(p=>p.id===id)).filter(Boolean); if(!players.length)return;
+  const skaters=players.filter(p=>!isGoaliePosition(p)),goalies=players.filter(p=>isGoaliePosition(p));
   const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
   doc.setFont('helvetica','bold');doc.setFontSize(17);doc.text('SC Altstadt – Game Statistics',14,16);
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(`${fmtDate(event.date)} · ${safePdfText(gameOpponent(event)||event.title||'Spiel')} · ${safePdfText(gameHomeAwayLabel(event)||'')}`,14,23);
-  const cols=['Spieler','CHK','BS','CF','CA','CFI','CAI','+/-','PP+','PP-','PK+','PK-','G','A1','A2'];
-  const body=players.map(p=>{const ps=ensurePlayerGameStats(eventId,p.id);return [safePdfText(statsPlayerName(p)),...GAME_STAT_KEYS.map(k=>String(ps[k]||0))]});
-  const totals=['TEAM',...GAME_STAT_KEYS.map(k=>String(players.reduce((sum,p)=>sum+Number(ensurePlayerGameStats(eventId,p.id)[k]||0),0)))];body.push(totals);
-  doc.autoTable({startY:29,head:[cols],body,theme:'grid',styles:{fontSize:7.5,cellPadding:1.8,halign:'center'},headStyles:{fillColor:[23,63,50]},columnStyles:{0:{cellWidth:42,halign:'left'}},didParseCell:d=>{if(d.section==='body'&&d.row.index===body.length-1)d.cell.styles.fontStyle='bold';}});
+  let y=29;
+  if(skaters.length){
+    const cols=['Spieler','CHK','BS','CF','CA','CFI','CAI','+/-','PP+','PP-','PK+','PK-','G','A1','A2'];
+    const body=skaters.map(p=>{const ps=ensurePlayerGameStats(eventId,p.id);return [safePdfText(statsPlayerName(p)),...GAME_STAT_KEYS.map(k=>String(ps[k]||0))]});
+    body.push(['TEAM',...GAME_STAT_KEYS.map(k=>String(skaters.reduce((sum,p)=>sum+Number(ensurePlayerGameStats(eventId,p.id)[k]||0),0)))]);
+    doc.autoTable({startY:y,head:[cols],body,theme:'grid',styles:{fontSize:7.5,cellPadding:1.8,halign:'center'},headStyles:{fillColor:[23,63,50]},columnStyles:{0:{cellWidth:42,halign:'left'}},didParseCell:d=>{if(d.section==='body'&&d.row.index===body.length-1)d.cell.styles.fontStyle='bold';}});
+    y=doc.lastAutoTable.finalY+9;
+  }
+  if(goalies.length){
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text('Goalie Statistics',14,y);y+=4;
+    const goalieBody=goalies.map(p=>{const ps=ensurePlayerGameStats(eventId,p.id);return [safePdfText(statsPlayerName(p)),String(ps.shotsAgainst||0),String(ps.goalsAgainst||0),goalieSavePct(ps)]});
+    doc.autoTable({startY:y,head:[['Goalie','Schüsse','Gegentore','Save Quote']],body:goalieBody,theme:'grid',styles:{fontSize:9,cellPadding:2,halign:'center'},headStyles:{fillColor:[23,63,50]},columnStyles:{0:{cellWidth:60,halign:'left'}}});
+  }
   doc.save(`${safeExportFileName(teamDisplayName())}_Stats_${(event.date||'').replaceAll('-','')}.pdf`);
 }
 (function ensureGameStatsCss(){
  if(document.getElementById('gameStatsCss'))return;const style=document.createElement('style');style.id='gameStatsCss';style.textContent=`
- .stats-shell{display:grid;gap:16px}.stats-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.stats-head h2{margin:0 0 4px}.stats-game-select{display:grid;grid-template-columns:140px minmax(260px,520px);gap:10px;align-items:center}.stats-game-select select{min-height:42px}.stats-player-picker{border:1px solid #d9e0dd;border-radius:14px;padding:12px 14px;background:#fff}.stats-player-picker summary{cursor:pointer;font-weight:700}.stats-player-picker summary span{font-weight:400;color:#667}.stats-player-picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:12px}.stats-player-pick{display:flex;gap:8px;align-items:center;padding:9px 10px;border:1px solid #e3e8e5;border-radius:10px}.stats-player-pick input{width:18px;height:18px}.stats-team-strip{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-radius:12px;background:#173f32;color:white}.stats-live-wrap{overflow-x:auto}.stats-live-table{width:100%;min-width:920px;border-collapse:separate;border-spacing:0 8px}.stats-live-table th{text-align:center;font-size:12px;padding:6px}.stats-live-table th:first-child{text-align:left}.stats-live-table td{background:#fff;padding:9px 6px;text-align:center;border-top:1px solid #e5e9e7;border-bottom:1px solid #e5e9e7}.stats-live-table .stats-name{text-align:left;font-weight:700;min-width:180px;padding-left:12px}.stat-counter{display:inline-grid;grid-template-columns:32px 30px 32px;align-items:center;gap:3px}.stat-counter button{width:32px;height:32px;border:1px solid #cbd5d0;border-radius:8px;background:#f5f7f6;font-size:20px;line-height:1;cursor:pointer}.stat-counter button:last-child{background:#173f32;color:#fff;border-color:#173f32}.stat-counter strong{font-variant-numeric:tabular-nums}.stats-more-grid{display:grid;grid-template-columns:repeat(8,minmax(105px,1fr));gap:8px;padding:8px}.stats-extra{display:grid;gap:5px;justify-items:center}.stats-extra>span{font-size:12px;font-weight:700}.stats-more-row td{background:#f7f9f8!important}.stats-more-btn{white-space:nowrap}@media(max-width:800px){.stats-game-select{grid-template-columns:1fr}.stats-player-picks{grid-template-columns:1fr}.stats-team-strip{gap:12px}.stats-more-grid{grid-template-columns:repeat(2,1fr)}}`;
+ .stats-shell{display:grid;gap:16px}.stats-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.stats-head h2{margin:0 0 4px}.stats-game-select{display:grid;grid-template-columns:140px minmax(260px,520px);gap:10px;align-items:center}.stats-game-select select{min-height:42px}.stats-player-picker{border:1px solid #d9e0dd;border-radius:14px;padding:12px 14px;background:#fff}.stats-player-picker summary{cursor:pointer;font-weight:700}.stats-player-picker summary span{font-weight:400;color:#667}.stats-player-picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:12px}.stats-player-pick{display:flex;gap:8px;align-items:center;padding:9px 10px;border:1px solid #e3e8e5;border-radius:10px}.stats-player-pick input{width:18px;height:18px}.stats-team-strip{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-radius:12px;background:#173f32;color:white}.stats-live-wrap{overflow-x:auto}.stats-live-table{width:100%;min-width:920px;border-collapse:separate;border-spacing:0 8px}.stats-live-table th{text-align:center;font-size:12px;padding:6px}.stats-live-table th:first-child{text-align:left}.stats-live-table td{background:#fff;padding:9px 6px;text-align:center;border-top:1px solid #e5e9e7;border-bottom:1px solid #e5e9e7}.stats-live-table .stats-name{text-align:left;font-weight:700;min-width:180px;padding-left:12px}.stat-counter{display:inline-grid;grid-template-columns:32px 30px 32px;align-items:center;gap:3px}.stat-counter button{width:32px;height:32px;border:1px solid #cbd5d0;border-radius:8px;background:#f5f7f6;font-size:20px;line-height:1;cursor:pointer}.stat-counter button:last-child{background:#173f32;color:#fff;border-color:#173f32}.stat-counter strong{font-variant-numeric:tabular-nums}.stats-more-grid{display:grid;grid-template-columns:repeat(8,minmax(105px,1fr));gap:8px;padding:8px}.stats-extra{display:grid;gap:5px;justify-items:center}.stats-extra>span{font-size:12px;font-weight:700}.stats-more-row td{background:#f7f9f8!important}.stats-more-btn{white-space:nowrap}.stats-goalie-section{display:grid;gap:6px}.stats-goalie-section h3{margin:4px 0 0}.stats-goalie-table{min-width:620px}@media(max-width:800px){.stats-game-select{grid-template-columns:1fr}.stats-player-picks{grid-template-columns:1fr}.stats-team-strip{gap:12px}.stats-more-grid{grid-template-columns:repeat(2,1fr)}}`;
  document.head.appendChild(style);
 })();
 
