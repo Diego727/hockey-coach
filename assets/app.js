@@ -3626,7 +3626,11 @@ function lineupEvent(eventId){
   return data.events.find(e=>e.id===eventId)||null;
 }
 function isTrainingLineup(eventId){
-  return lineupEvent(eventId)?.type==='training';
+  // Nutzt dieselbe robuste Typ-Erkennung wie das Spielerportal.
+  // Damit werden auch ältere Trainings erkannt, deren type-Feld fehlt oder anders benannt ist.
+  const event=lineupEvent(eventId);
+  if(!event)return false;
+  return viewerEventType(event)==='training';
 }
 function lineupLineCount(eventId){
   return isTrainingLineup(eventId)?5:4;
