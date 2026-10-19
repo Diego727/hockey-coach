@@ -3622,11 +3622,20 @@ const BOXPLAY_POSITIONS=[
   {key:'D1',label:'Verteidiger 1'},
   {key:'D2',label:'Verteidiger 2'}
 ];
+function lineupEvent(eventId){
+  return data.events.find(e=>e.id===eventId)||null;
+}
+function isTrainingLineup(eventId){
+  return lineupEvent(eventId)?.type==='training';
+}
+function lineupLineCount(eventId){
+  return isTrainingLineup(eventId)?5:4;
+}
 function ensureLineup(eventId){
   data.lineups[eventId] ||= {};
   data.lineups[eventId].goalies ||= {G1:null,G2:null};
   for(const g of GOALIE_POSITIONS) if(!(g.key in data.lineups[eventId].goalies)) data.lineups[eventId].goalies[g.key]=null;
-  for(let line=1;line<=4;line++){
+  for(let line=1;line<=lineupLineCount(eventId);line++){
     data.lineups[eventId][line] ||= {};
     for(const pos of LINE_POSITIONS) if(!(pos.key in data.lineups[eventId][line])) data.lineups[eventId][line][pos.key]=null;
   }
@@ -3645,7 +3654,7 @@ function ensureLineup(eventId){
   // weil die bisherigen Positionswerte weiterhin Spieler 1 enthalten.
   data.lineups[eventId].alternates ||= {lines:{},powerplay:{},boxplay:{}};
   data.lineups[eventId].alternates.lines ||= {};
-  for(let line=1;line<=4;line++){
+  for(let line=1;line<=lineupLineCount(eventId);line++){
     data.lineups[eventId].alternates.lines[line] ||= {};
     for(const pos of LINE_POSITIONS) if(!(pos.key in data.lineups[eventId].alternates.lines[line])) data.lineups[eventId].alternates.lines[line][pos.key]=null;
   }
@@ -3793,7 +3802,7 @@ function downloadLineupRoster(eventId){
     const pid=lineup.goalies?.[g.key];
     if(pid&&!lineupPlayerIds.includes(pid))lineupPlayerIds.push(pid);
   }
-  for(let line=1;line<=4;line++){
+  for(let line=1;line<=lineupLineCount(eventId);line++){
     for(const pos of LINE_POSITIONS){
       const pid=lineup[line]?.[pos.key];
       if(pid&&!lineupPlayerIds.includes(pid))lineupPlayerIds.push(pid);
@@ -3801,7 +3810,7 @@ function downloadLineupRoster(eventId){
       if(alt&&!lineupPlayerIds.includes(alt))lineupPlayerIds.push(alt);
     }
   }
-  if(lineup.extraForward&&!lineupPlayerIds.includes(lineup.extraForward))lineupPlayerIds.push(lineup.extraForward);
+  if(!isTrainingLineup(eventId)&&lineup.extraForward&&!lineupPlayerIds.includes(lineup.extraForward))lineupPlayerIds.push(lineup.extraForward);
   const players=lineupPlayerIds
     .map(pid=>data.players.find(p=>p.id===pid))
     .filter(Boolean);
@@ -3835,7 +3844,7 @@ function downloadLineupOnly(eventId){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
   // Die bereits vorhandene grafische Trainings-Aufstellung wird auch für Spiele verwendet.
-  // Sie enthält Goalies, vier Linien sowie Powerplay und Boxplay.
+  // Sie enthält Goalies, die ereignisabhängige Anzahl Linien sowie Powerplay und Boxplay.
   const pdfEvent={...event,type:'training'};
   addLineupTable(doc,pdfEvent,18);
   // addLineupTable legt für die grafische Ansicht neue Seiten an; leere Startseite entfernen.
@@ -3891,11 +3900,11 @@ function renderLineup(eventId){
   const lineup=data.lineups[eventId];
   const used=new Set();
   for(const g of GOALIE_POSITIONS){const pid=lineup.goalies[g.key];if(pid)used.add(pid)}
-  for(let line=1;line<=4;line++) for(const pos of LINE_POSITIONS){
+  for(let line=1;line<=lineupLineCount(eventId);line++) for(const pos of LINE_POSITIONS){
     const pid=lineup[line][pos.key];if(pid)used.add(pid);
     const alt=lineup.alternates?.lines?.[line]?.[pos.key];if(alt)used.add(alt);
   }
-  if(lineup.extraForward)used.add(lineup.extraForward);
+  if(!isTrainingLineup(eventId)&&lineup.extraForward)used.add(lineup.extraForward);
 
   const pool=document.getElementById('playerPool');
   const board=document.getElementById('lineupBoard');
@@ -3940,7 +3949,7 @@ function renderLineup(eventId){
   }
   rink.appendChild(goalies);
 
-  for(let line=1;line<=4;line++){
+  for(let line=1;line<=lineupLineCount(eventId);line++){
     const row=document.createElement('div');
     row.className='line-row';
     row.innerHTML=`<h3>${line}. Linie</h3>`;
@@ -3961,18 +3970,20 @@ function renderLineup(eventId){
     rink.appendChild(row);
   }
 
-  const extraForwardRow=document.createElement('div');
-  extraForwardRow.className='line-row extra-forward-row';
-  extraForwardRow.innerHTML='<h3>13. Stürmer</h3>';
-  const extraForwardWrap=document.createElement('div');
-  extraForwardWrap.className='forward-row';
-  const spacerLeft=document.createElement('div');
-  const spacerRight=document.createElement('div');
-  extraForwardWrap.appendChild(spacerLeft);
-  extraForwardWrap.appendChild(makeSlot(eventId,'extraForward','extraForward','13. Stürmer',lineup.extraForward));
-  extraForwardWrap.appendChild(spacerRight);
-  extraForwardRow.appendChild(extraForwardWrap);
-  rink.appendChild(extraForwardRow);
+  if(!isTrainingLineup(eventId)){
+    const extraForwardRow=document.createElement('div');
+    extraForwardRow.className='line-row extra-forward-row';
+    extraForwardRow.innerHTML='<h3>13. Stürmer</h3>';
+    const extraForwardWrap=document.createElement('div');
+    extraForwardWrap.className='forward-row';
+    const spacerLeft=document.createElement('div');
+    const spacerRight=document.createElement('div');
+    extraForwardWrap.appendChild(spacerLeft);
+    extraForwardWrap.appendChild(makeSlot(eventId,'extraForward','extraForward','13. Stürmer',lineup.extraForward));
+    extraForwardWrap.appendChild(spacerRight);
+    extraForwardRow.appendChild(extraForwardWrap);
+    rink.appendChild(extraForwardRow);
+  }
 
   const specialTitle=document.createElement('h2');
   specialTitle.textContent='Special Teams';
@@ -4023,7 +4034,7 @@ function renderLineup(eventId){
 function clearPlayerFromLineup(eventId,pid){
   ensureLineup(eventId);
   for(const g of GOALIE_POSITIONS) if(data.lineups[eventId].goalies[g.key]===pid) data.lineups[eventId].goalies[g.key]=null;
-  for(let l=1;l<=4;l++) for(const p of LINE_POSITIONS){
+  for(let l=1;l<=lineupLineCount(eventId);l++) for(const p of LINE_POSITIONS){
     if(data.lineups[eventId][l][p.key]===pid) data.lineups[eventId][l][p.key]=null;
     if(data.lineups[eventId].alternates.lines[l][p.key]===pid) data.lineups[eventId].alternates.lines[l][p.key]=null;
   }
@@ -4109,7 +4120,7 @@ function lineupReport(eventId){
   let out='<h3>Goalies</h3><table><tr><th>Goalie 1</th><th>Goalie 2</th><th>Goalie 3</th></tr>';
   out+=`<tr><td>${pname(data.lineups[eventId].goalies.G1)}</td><td>${pname(data.lineups[eventId].goalies.G2)}</td><td>${pname(data.lineups[eventId].goalies.G3)}</td></tr></table>`;
   out+='<h3>Aufstellung</h3><table><tr><th>Linie</th><th>LV</th><th>RV</th><th>LF</th><th>C</th><th>RF</th></tr>';
-  for(let line=1;line<=4;line++){
+  for(let line=1;line<=lineupLineCount(eventId);line++){
     const name=key=>pname(data.lineups[eventId][line][key]);
     out+=`<tr><td>${line}</td><td>${name('LD')}</td><td>${name('RD')}</td><td>${name('LW')}</td><td>${name('C')}</td><td>${name('RW')}</td></tr>`;
   }
@@ -4271,7 +4282,7 @@ function pdfLineupRows(eventId){
   const pair=(primary,secondary)=>secondary?`${pname(primary)} / ${pname(secondary)}`:pname(primary);
   const rows=[];
   rows.push(['Goalies',pname(data.lineups[eventId].goalies.G1),pname(data.lineups[eventId].goalies.G2),pname(data.lineups[eventId].goalies.G3),'','']);
-  for(let line=1;line<=4;line++){
+  for(let line=1;line<=lineupLineCount(eventId);line++){
     const alt=data.lineups[eventId].alternates.lines[line];
     rows.push([
       String(line),
@@ -4457,10 +4468,11 @@ function addLineupTable(doc,event,startY){
 
     // Linien
     let y=67;
-    const lineBoxH=49;
-    const lineGap=4;
+    const fiveLineTraining=isTrainingLineup(event.id);
+    const lineBoxH=fiveLineTraining?40:49;
+    const lineGap=fiveLineTraining?3:4;
 
-    for(let line=1;line<=4;line++){
+    for(let line=1;line<=lineupLineCount(event.id);line++){
       doc.setDrawColor(216,227,222);
       doc.setFillColor(252,253,253);
       doc.roundedRect(margin,y,contentWidth,lineBoxH,3,3,'FD');
@@ -4475,27 +4487,29 @@ function addLineupTable(doc,event,startY){
       const defGap=5;
       const defStartX=(pageWidth-(defW*2+defGap))/2;
 
-      drawSlot(defStartX,y+9,defW,16,'Verteidiger links',lineup[line].LD,lineup.alternates.lines[line].LD);
-      drawSlot(defStartX+defW+defGap,y+9,defW,16,'Verteidiger rechts',lineup[line].RD,lineup.alternates.lines[line].RD);
+      drawSlot(defStartX,y+9,defW,fiveLineTraining?13:16,'Verteidiger links',lineup[line].LD,lineup.alternates.lines[line].LD);
+      drawSlot(defStartX+defW+defGap,y+9,defW,fiveLineTraining?13:16,'Verteidiger rechts',lineup[line].RD,lineup.alternates.lines[line].RD);
 
       // Stürmer links / Center / rechts
       const fwGap=4;
       const fwW=(contentWidth-12-(fwGap*2))/3;
       const fwStartX=margin+6;
 
-      drawSlot(fwStartX,y+28,fwW,16,'Stürmer links',lineup[line].LW,lineup.alternates.lines[line].LW);
-      drawSlot(fwStartX+fwW+fwGap,y+28,fwW,16,'Center',lineup[line].C,lineup.alternates.lines[line].C);
-      drawSlot(fwStartX+(fwW+fwGap)*2,y+28,fwW,16,'Stürmer rechts',lineup[line].RW,lineup.alternates.lines[line].RW);
+      drawSlot(fwStartX,y+(fiveLineTraining?24:28),fwW,fiveLineTraining?12:16,'Stürmer links',lineup[line].LW,lineup.alternates.lines[line].LW);
+      drawSlot(fwStartX+fwW+fwGap,y+(fiveLineTraining?24:28),fwW,fiveLineTraining?12:16,'Center',lineup[line].C,lineup.alternates.lines[line].C);
+      drawSlot(fwStartX+(fwW+fwGap)*2,y+(fiveLineTraining?24:28),fwW,fiveLineTraining?12:16,'Stürmer rechts',lineup[line].RW,lineup.alternates.lines[line].RW);
 
       y+=lineBoxH+lineGap;
     }
 
-    // 13. Stürmer unter den vier Linien
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(9);
-    doc.setTextColor(23,63,50);
-    doc.text('13. Stürmer',pageWidth/2,y+4,{align:'center'});
-    drawSlot((pageWidth-70)/2,y+6,70,12,'13. Stürmer',lineup.extraForward);
+    // Bei Spielen bleibt der 13. Stürmer wie bisher bestehen. Im Training gibt es stattdessen die 5. Linie.
+    if(!isTrainingLineup(event.id)){
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9);
+      doc.setTextColor(23,63,50);
+      doc.text('13. Stürmer',pageWidth/2,y+4,{align:'center'});
+      drawSlot((pageWidth-70)/2,y+6,70,12,'13. Stürmer',lineup.extraForward);
+    }
 
     // Special Teams auf einer eigenen Rapport-Seite ausgeben.
     doc.addPage();
