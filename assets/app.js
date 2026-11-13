@@ -3028,10 +3028,10 @@ function applyAbsencesToEvent(event){
     if(manualStatus!==null){
       data.attendance[event.id][p.id]=manualStatus;
 
-      // Der automatische Abwesenheitsgrund darf bei manueller Teilnahme
-      // nicht weiter angezeigt werden.
+      // Bei einer ausdrücklichen Absage den im Spielerportal gespeicherten
+      // Grund behalten. Nur bei Teilnahme/Unsicher alte Gründe entfernen.
       const reasonKey=p.id+'_reason';
-      if(reasonKey in data.attendance[event.id]){
+      if(manualStatus!=='absent' && reasonKey in data.attendance[event.id]){
         delete data.attendance[event.id][reasonKey];
       }
 
@@ -3078,7 +3078,7 @@ function recalculateAttendanceFromAbsences(){
       if(manualStatus!==null){
         data.attendance[e.id][p.id]=manualStatus;
 
-        if(reasonKey in data.attendance[e.id]){
+        if(manualStatus!=='absent' && reasonKey in data.attendance[e.id]){
           delete data.attendance[e.id][reasonKey];
         }
 
