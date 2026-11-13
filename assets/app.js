@@ -7289,7 +7289,7 @@ async function syncPlayerStatusesIntoCoachView(){
 
   const {data:rows,error}=await cloudClient
     .from('player_event_status')
-    .select('event_id,status,updated_at,player_profiles!inner(player_ref,team_key,club_id)')
+    .select('event_id,status,absence_reason,updated_at,player_profiles!inner(player_ref,team_key,club_id)')
     .eq('player_profiles.club_id',SHARED_CLUB_ID);
 
   if(error){
@@ -7321,6 +7321,20 @@ async function syncPlayerStatusesIntoCoachView(){
 
     if(team.attendance[row.event_id][profile.player_ref]!==row.status){
       team.attendance[row.event_id][profile.player_ref]=row.status;
+      changed=true;
+    }
+
+    // Abwesenheitsgrund aus dem Spielerportal ebenfalls in der
+    // Coach-Anwesenheitsübersicht anzeigen.
+    const reasonKey=profile.player_ref+'_reason';
+    const reason=row.status==='absent'?(row.absence_reason||''):'';
+    if(reason){
+      if(team.attendance[row.event_id][reasonKey]!==reason){
+        team.attendance[row.event_id][reasonKey]=reason;
+        changed=true;
+      }
+    }else if(reasonKey in team.attendance[row.event_id]){
+      delete team.attendance[row.event_id][reasonKey];
       changed=true;
     }
 
